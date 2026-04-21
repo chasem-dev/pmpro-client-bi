@@ -1,7 +1,6 @@
 const P6_BASE = requireEnv("P6_BASE_URL");
 const P6_DB = requireEnv("P6_DATABASE_NAME");
 const P6_AUTHTOKEN = requireEnv("P6_AUTHTOKEN");
-const P6_AUTHORIZATION = requireEnv("P6_AUTHORIZATION");
 
 const SESSION_TTL_MS = 10 * 60 * 1000;
 
@@ -18,7 +17,6 @@ function requireEnv(name: string): string {
 function authHeaders(): Record<string, string> {
   return {
     authtoken: P6_AUTHTOKEN,
-    authorization: P6_AUTHORIZATION,
   };
 }
 
