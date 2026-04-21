@@ -29,6 +29,18 @@ type PostMessageLog = {
   extractedToken?: string;
 };
 
+type DirectProbe = {
+  attempt: "no-token" | "with-token";
+  status?: number;
+  ok?: boolean;
+  body?: unknown;
+  error?: string;
+  finishedAt: string;
+};
+
+const CLEARSQUARE_SELF_URL =
+  "https://dashboard.pmpro.consulting/api/portal/users/self/details";
+
 const TOKEN_KEY_PATTERNS = [
   /token/i,
   /access[_-]?token/i,
@@ -124,6 +136,10 @@ export default function Home() {
 
   const attemptedAutoResolve = useRef(false);
   const attemptedAutoActivities = useRef(false);
+
+  const [directProbes, setDirectProbes] = useState<DirectProbe[]>([]);
+  const directProbeNoToken = useRef(false);
+  const directProbeWithToken = useRef(false);
 
   // Initial synchronous probes
   useEffect(() => {
@@ -333,6 +349,68 @@ export default function Home() {
     }
   }, [detectedToken]);
 
+  // Direct client-side probe of Clearsquare endpoint (with credentials).
+  // Runs once on mount; re-runs once if a token is detected later.
+  useEffect(() => {
+    const hasToken = !!detectedToken;
+    if (hasToken && directProbeWithToken.current) return;
+    if (!hasToken && directProbeNoToken.current) return;
+    if (hasToken) directProbeWithToken.current = true;
+    else directProbeNoToken.current = true;
+
+    const attempt: DirectProbe["attempt"] = hasToken
+      ? "with-token"
+      : "no-token";
+    const payload = hasToken
+      ? { token: detectedToken, access_token: detectedToken }
+      : {};
+
+    (async () => {
+      try {
+        const res = await fetch(CLEARSQUARE_SELF_URL, {
+          method: "POST",
+          credentials: "include",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const text = await res.text();
+        let body: unknown = text;
+        try {
+          body = JSON.parse(text);
+        } catch {
+          /* keep as text */
+        }
+        setDirectProbes((prev) => [
+          ...prev,
+          {
+            attempt,
+            status: res.status,
+            ok: res.ok,
+            body,
+            finishedAt: new Date().toISOString().slice(11, 23),
+          },
+        ]);
+
+        // If it actually worked, surface the user + email just like the proxy path.
+        if (res.ok) {
+          setClearsquareUser((existing: unknown) => existing ?? body);
+          const emailFromBody = findEmail(body);
+          if (emailFromBody) setEmail((e: string) => e || emailFromBody);
+        }
+      } catch (err) {
+        setDirectProbes((prev) => [
+          ...prev,
+          {
+            attempt,
+            error:
+              err instanceof Error ? `${err.name}: ${err.message}` : String(err),
+            finishedAt: new Date().toISOString().slice(11, 23),
+          },
+        ]);
+      }
+    })();
+  }, [detectedToken]);
+
   async function fetchActivities(emailToUse: string) {
     setActivitiesLoading(true);
     setActivitiesError(null);
@@ -452,7 +530,58 @@ export default function Home() {
           </form>
         </Panel>
 
-        <Panel title="2. Clearsquare user (via /api/clearsquare/self)">
+        <Panel title="2. Direct iframe fetch (credentials: include)">
+          <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+            Fires on mount, and re-fires once a token is detected. Tells us
+            whether the Clearsquare session cookie flows to this origin and
+            what CORS posture the endpoint has. A network/CORS failure here
+            surfaces as a <code>TypeError</code>.
+          </p>
+          {directProbes.length === 0 ? (
+            <div className="text-sm text-zinc-500">Running…</div>
+          ) : (
+            <div className="space-y-3">
+              {directProbes.map((p, i) => (
+                <div
+                  key={i}
+                  className="rounded border border-zinc-200 p-3 dark:border-zinc-800"
+                >
+                  <div className="mb-2 flex flex-wrap gap-2 text-xs">
+                    <span className="rounded bg-zinc-100 px-1.5 py-0.5 dark:bg-zinc-900">
+                      attempt: <strong>{p.attempt}</strong>
+                    </span>
+                    {p.status !== undefined && (
+                      <span
+                        className={`rounded px-1.5 py-0.5 ${
+                          p.ok
+                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
+                            : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200"
+                        }`}
+                      >
+                        status: {p.status}
+                      </span>
+                    )}
+                    {p.error && (
+                      <span className="rounded bg-red-100 px-1.5 py-0.5 text-red-800 dark:bg-red-950 dark:text-red-200">
+                        {p.error}
+                      </span>
+                    )}
+                    <span className="text-zinc-500">at {p.finishedAt}</span>
+                  </div>
+                  {p.body !== undefined && (
+                    <pre className="overflow-x-auto rounded bg-zinc-100 p-2 text-xs dark:bg-zinc-900">
+                      {typeof p.body === "string"
+                        ? p.body
+                        : JSON.stringify(p.body, null, 2)}
+                    </pre>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </Panel>
+
+        <Panel title="3. Clearsquare user (via /api/clearsquare/self proxy)">
           {resolving && (
             <div className="text-sm text-zinc-500">Resolving user…</div>
           )}
@@ -475,7 +604,7 @@ export default function Home() {
           )}
         </Panel>
 
-        <Panel title="3. P6 activity lookup">
+        <Panel title="4. P6 activity lookup">
           <form
             onSubmit={onEmailSubmit}
             className="flex flex-col gap-2 sm:flex-row sm:items-end"
@@ -570,7 +699,7 @@ export default function Home() {
           )}
         </Panel>
 
-        <Panel title="4. Environment signals">
+        <Panel title="5. Environment signals">
           <div className="overflow-hidden rounded border border-zinc-200 dark:border-zinc-800">
             <table className="w-full text-xs">
               <thead className="bg-zinc-100 text-left dark:bg-zinc-900">
@@ -617,7 +746,7 @@ export default function Home() {
           </div>
         </Panel>
 
-        <Panel title="5. postMessage log (live)">
+        <Panel title="6. postMessage log (live)">
           {messages.length === 0 ? (
             <div className="text-sm text-zinc-500">
               No messages received yet. Parent may not postMessage, or only
