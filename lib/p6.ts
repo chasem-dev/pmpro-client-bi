@@ -77,6 +77,12 @@ export interface P6User {
   Id?: string;
 }
 
+export interface P6Project {
+  ObjectId: string;
+  Id: string;
+  Name: string;
+}
+
 export interface P6Activity {
   ObjectId: number;
   Name: string;
@@ -87,6 +93,41 @@ export interface P6Activity {
   PrimaryResourceId?: string;
   PrimaryResourceName?: string;
   PrimaryResourceObjectId?: number;
+}
+
+export async function getProjects(): Promise<P6Project[]> {
+  const params = new URLSearchParams({
+    DatabaseName: P6_DB,
+    Fields: "Name,ObjectId,Id",
+    Filter: "",
+  });
+  const res = await p6Fetch(`/project?${params.toString()}`);
+  if (!res.ok) {
+    throw new P6Error(`P6 projects fetch failed (${res.status})`, res.status, await safeText(res));
+  }
+  const data = (await res.json()) as P6Project[] | null;
+  return Array.isArray(data) ? data : [];
+}
+
+export async function getProjectActivities(
+  projectObjectId: string,
+): Promise<P6Activity[]> {
+  const params = new URLSearchParams({
+    DatabaseName: P6_DB,
+    Fields:
+      "ProjectName,Name,ObjectId,OwnerIDArray,OwnerNamesArray,ActivityOwnerUserId,PrimaryResourceId,PrimaryResourceName,PrimaryResourceObjectId",
+    Filter: `ProjectObjectId:eq:'${projectObjectId}'`,
+  });
+  const res = await p6Fetch(`/activity?${params.toString()}`);
+  if (!res.ok) {
+    throw new P6Error(
+      `P6 activities fetch failed (${res.status})`,
+      res.status,
+      await safeText(res),
+    );
+  }
+  const data = (await res.json()) as P6Activity[] | null;
+  return Array.isArray(data) ? data : [];
 }
 
 export async function findUserByEmail(email: string): Promise<P6User | null> {
