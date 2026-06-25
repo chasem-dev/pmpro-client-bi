@@ -6,6 +6,7 @@ import {
   SignUpButton,
   UserButton,
 } from "@clerk/nextjs";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 type Project = {
@@ -18,9 +19,14 @@ type Activity = {
   ObjectId: string;
   Name: string;
   ProjectName?: string;
+  Status?: string;
   PrimaryResourceId?: string;
   PrimaryResourceName?: string;
   PrimaryResourceObjectId?: string;
+  PlannedLaborUnits?: number | string;
+  ActualLaborUnits?: number | string;
+  PlannedLaborCost?: number | string;
+  ActualLaborCost?: number | string;
 };
 
 type ProjectsResponse = {
@@ -70,6 +76,56 @@ async function fetchActivities(
       error: err instanceof Error ? err.message : "Unknown error",
     };
   }
+}
+
+function num(value: number | string | undefined): number {
+  const n = typeof value === "number" ? value : parseFloat(String(value ?? ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+const fmtUnits = (n: number) =>
+  n.toLocaleString(undefined, { maximumFractionDigits: 1 });
+
+const fmtCost = (n: number) =>
+  n.toLocaleString(undefined, {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
+
+// Planned-vs-actual progress bar with actual/planned labels.
+function StatBar({
+  label,
+  planned,
+  actual,
+  format,
+}: {
+  label: string;
+  planned: number;
+  actual: number;
+  format: (n: number) => string;
+}) {
+  const pct = planned > 0 ? Math.min((actual / planned) * 100, 100) : 0;
+  const over = planned > 0 && actual > planned;
+  return (
+    <div>
+      <div className="flex items-baseline justify-between text-xs">
+        <span className="text-zinc-500 dark:text-zinc-400">{label}</span>
+        <span className="font-mono text-zinc-700 dark:text-zinc-300">
+          {format(actual)}
+          <span className="text-zinc-400"> / {format(planned)}</span>
+        </span>
+      </div>
+      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+        <div
+          className={`h-full rounded-full ${
+            over ? "bg-amber-500" : "bg-blue-500"
+          }`}
+          style={{ width: `${planned > 0 ? pct : 0}%` }}
+        />
+      </div>
+    </div>
+  );
 }
 
 export default function Home() {
@@ -129,9 +185,17 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-zinc-50 py-8 px-4 dark:bg-black">
       <nav className="mx-auto mb-6 flex max-w-5xl items-center justify-between gap-3">
-        <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-          PMPro BI
-        </span>
+        <div className="flex items-center gap-4">
+          <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            PMPro BI
+          </span>
+          <Link
+            href="/admin"
+            className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+          >
+            Admin
+          </Link>
+        </div>
         <div className="flex items-center gap-2">
           <Show when="signed-out">
             <SignInButton mode="modal">
@@ -251,6 +315,37 @@ export default function Home() {
                         </button>
                       </div>
 
+                      {!activitiesLoading &&
+                        !activitiesError &&
+                        activities.length > 0 && (
+                          <div className="mb-3 grid gap-x-6 gap-y-2 rounded-md border border-zinc-100 bg-zinc-50 p-3 sm:grid-cols-2 dark:border-zinc-900 dark:bg-zinc-900/40">
+                            <StatBar
+                              label="Total labor units (actual / planned)"
+                              planned={activities.reduce(
+                                (s, a) => s + num(a.PlannedLaborUnits),
+                                0,
+                              )}
+                              actual={activities.reduce(
+                                (s, a) => s + num(a.ActualLaborUnits),
+                                0,
+                              )}
+                              format={fmtUnits}
+                            />
+                            <StatBar
+                              label="Total labor cost (actual / planned)"
+                              planned={activities.reduce(
+                                (s, a) => s + num(a.PlannedLaborCost),
+                                0,
+                              )}
+                              actual={activities.reduce(
+                                (s, a) => s + num(a.ActualLaborCost),
+                                0,
+                              )}
+                              format={fmtCost}
+                            />
+                          </div>
+                        )}
+
                       {activitiesLoading ? (
                         <div className="space-y-2">
                           {Array.from({ length: 5 }).map((_, i) => (
@@ -269,20 +364,33 @@ export default function Home() {
                           No activities found for this project.
                         </div>
                       ) : (
-                        <ul className="max-h-96 divide-y divide-zinc-100 overflow-y-auto rounded-md border border-zinc-100 dark:divide-zinc-900 dark:border-zinc-900">
+                        <ul className="max-h-[32rem] divide-y divide-zinc-100 overflow-y-auto rounded-md border border-zinc-100 dark:divide-zinc-900 dark:border-zinc-900">
                           {activities.map((activity) => (
-                            <li
-                              key={activity.ObjectId}
-                              className="flex items-center justify-between gap-3 px-3 py-2"
-                            >
-                              <span className="text-sm text-zinc-800 dark:text-zinc-200">
-                                {activity.Name}
-                              </span>
-                              {activity.PrimaryResourceName && (
-                                <span className="shrink-0 rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400">
-                                  {activity.PrimaryResourceName}
+                            <li key={activity.ObjectId} className="px-3 py-2.5">
+                              <div className="flex items-start justify-between gap-3">
+                                <span className="text-sm text-zinc-800 dark:text-zinc-200">
+                                  {activity.Name}
                                 </span>
-                              )}
+                                {activity.PrimaryResourceName && (
+                                  <span className="shrink-0 rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400">
+                                    {activity.PrimaryResourceName}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="mt-2 grid gap-x-6 gap-y-2 sm:grid-cols-2">
+                                <StatBar
+                                  label="Labor units (actual / planned)"
+                                  planned={num(activity.PlannedLaborUnits)}
+                                  actual={num(activity.ActualLaborUnits)}
+                                  format={fmtUnits}
+                                />
+                                <StatBar
+                                  label="Labor cost (actual / planned)"
+                                  planned={num(activity.PlannedLaborCost)}
+                                  actual={num(activity.ActualLaborCost)}
+                                  format={fmtCost}
+                                />
+                              </div>
                             </li>
                           ))}
                         </ul>
