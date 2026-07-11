@@ -164,6 +164,9 @@ export default function AdminPage() {
             />
           )}
         </Panel>
+
+        <PolicyManager eps={eps} />
+        <AuditPanel />
       </main>
     </div>
   );
@@ -716,5 +719,301 @@ function Panel({
       </h2>
       {children}
     </section>
+  );
+}
+
+type PolicyRule = {
+  fieldKey: string;
+  visible: boolean;
+  editable: boolean;
+};
+
+type CompanyRule = {
+  epsObjectId: string;
+  epsId: string;
+  epsName: string;
+};
+
+function PolicyManager({ eps }: { eps: Eps[] }) {
+  const [scope, setScope] = useState<"org" | "user">("org");
+  const [subjectKey, setSubjectKey] = useState("");
+  const [policies, setPolicies] = useState<PolicyRule[]>([]);
+  const [companies, setCompanies] = useState<CompanyRule[]>([]);
+  const [selectedEps, setSelectedEps] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function loadPolicies() {
+    if (!subjectKey.trim()) return;
+    setError(null);
+    const res = await apiCall<{
+      policies: PolicyRule[];
+      companies: CompanyRule[];
+    }>(`/api/policies?scope=${scope}&subjectKey=${encodeURIComponent(subjectKey.trim())}`);
+    if (res.ok) {
+      setPolicies(res.data?.policies ?? []);
+      setCompanies(res.data?.companies ?? []);
+    } else {
+      setError(res.error ?? "Failed to load policies.");
+    }
+  }
+
+  async function savePolicy(fieldKey: string, visible: boolean, editable: boolean) {
+    if (!subjectKey.trim()) return;
+    const res = await apiCall("/api/policies", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        scope,
+        subjectKey: subjectKey.trim(),
+        fieldKey,
+        visible,
+        editable,
+      }),
+    });
+    if (res.ok) {
+      setMessage(`Saved policy for ${fieldKey}.`);
+      void loadPolicies();
+    } else {
+      setError(res.error ?? "Failed to save policy.");
+    }
+  }
+
+  async function addCompany() {
+    if (!subjectKey.trim() || !selectedEps) return;
+    const node = eps.find((e) => e.ObjectId === selectedEps);
+    if (!node) return;
+    const res = await apiCall("/api/policies", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        scope,
+        subjectKey: subjectKey.trim(),
+        epsObjectId: node.ObjectId,
+        epsId: node.Id,
+        epsName: node.Name,
+      }),
+    });
+    if (res.ok) {
+      setMessage(`Granted access to ${node.Name}.`);
+      void loadPolicies();
+    } else {
+      setError(res.error ?? "Failed to add company access.");
+    }
+  }
+
+  async function removeCompany(epsObjectId: string) {
+    const res = await apiCall(
+      `/api/policies?scope=${scope}&subjectKey=${encodeURIComponent(subjectKey.trim())}&epsObjectId=${epsObjectId}`,
+      { method: "DELETE" },
+    );
+    if (res.ok) void loadPolicies();
+    else setError(res.error ?? "Failed to remove company access.");
+  }
+
+  return (
+    <Panel title="Field & company access">
+      <p className="mb-3 text-sm text-zinc-600 dark:text-zinc-400">
+        Configure which fields are visible/editable and which client companies
+        (2nd-level EPS) a Clerk org or user can access. Leave company access
+        empty to allow all Production projects.
+      </p>
+      <div className="mb-4 grid gap-3 sm:grid-cols-3">
+        <Field label="Scope">
+          <select
+            value={scope}
+            onChange={(e) => setScope(e.target.value as "org" | "user")}
+            className={inputClass}
+          >
+            <option value="org">Organization (Clerk org ID)</option>
+            <option value="user">User (Clerk user ID)</option>
+          </select>
+        </Field>
+        <Field label="Subject key">
+          <input
+            value={subjectKey}
+            onChange={(e) => setSubjectKey(e.target.value)}
+            placeholder={scope === "org" ? "org_..." : "user_..."}
+            className={inputClass}
+          />
+        </Field>
+        <div className="flex items-end">
+          <button
+            type="button"
+            onClick={() => void loadPolicies()}
+            className="h-10 rounded-md border border-zinc-300 px-4 text-sm dark:border-zinc-700"
+          >
+            Load
+          </button>
+        </div>
+      </div>
+
+      {error && <FormMessage tone="error">{error}</FormMessage>}
+      {message && <FormMessage tone="success">{message}</FormMessage>}
+
+      {policies.length > 0 && (
+        <div className="mb-6 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-zinc-500">
+                <th className="py-2">Field</th>
+                <th>Visible</th>
+                <th>Editable</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {policies.map((p) => (
+                <PolicyRow
+                  key={p.fieldKey}
+                  rule={p}
+                  onSave={(visible, editable) =>
+                    void savePolicy(p.fieldKey, visible, editable)
+                  }
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="border-t border-zinc-200 pt-4 dark:border-zinc-800">
+        <h3 className="mb-2 text-sm font-semibold">Allowed companies (EPS)</h3>
+        <div className="flex flex-wrap gap-2">
+          <select
+            value={selectedEps}
+            onChange={(e) => setSelectedEps(e.target.value)}
+            className="rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+          >
+            <option value="">Select client EPS…</option>
+            {eps.map((e) => (
+              <option key={e.ObjectId} value={e.ObjectId}>
+                {e.Name} ({e.Id})
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => void addCompany()}
+            disabled={!selectedEps}
+            className="rounded bg-blue-600 px-3 py-1 text-sm text-white disabled:opacity-50"
+          >
+            Add
+          </button>
+        </div>
+        {companies.length > 0 && (
+          <ul className="mt-2 space-y-1 text-sm">
+            {companies.map((c) => (
+              <li key={c.epsObjectId} className="flex items-center gap-2">
+                <span>
+                  {c.epsName} ({c.epsId})
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void removeCompany(c.epsObjectId)}
+                  className="text-xs text-red-600"
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
+function PolicyRow({
+  rule,
+  onSave,
+}: {
+  rule: PolicyRule;
+  onSave: (visible: boolean, editable: boolean) => void;
+}) {
+  const [visible, setVisible] = useState(rule.visible);
+  const [editable, setEditable] = useState(rule.editable);
+
+  return (
+    <tr className="border-t border-zinc-100 dark:border-zinc-900">
+      <td className="py-2 font-mono text-xs">{rule.fieldKey}</td>
+      <td>
+        <input
+          type="checkbox"
+          checked={visible}
+          onChange={(e) => setVisible(e.target.checked)}
+        />
+      </td>
+      <td>
+        <input
+          type="checkbox"
+          checked={editable}
+          onChange={(e) => setEditable(e.target.checked)}
+        />
+      </td>
+      <td>
+        <button
+          type="button"
+          onClick={() => onSave(visible, editable)}
+          className="text-xs text-blue-600"
+        >
+          Save
+        </button>
+      </td>
+    </tr>
+  );
+}
+
+function AuditPanel() {
+  const [logs, setLogs] = useState<
+    {
+      action: string;
+      entityType: string;
+      entityId?: string;
+      details?: string;
+      createdAt: string;
+    }[]
+  >([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    const res = await apiCall<{ logs: typeof logs }>("/api/audit?limit=50");
+    setLoading(false);
+    if (res.ok) setLogs(res.data?.logs ?? []);
+    else setError(res.error ?? "Failed to load audit log.");
+  }
+
+  return (
+    <Panel title="Recent activity (audit)">
+      <button
+        type="button"
+        onClick={() => void load()}
+        disabled={loading}
+        className="mb-3 rounded border border-zinc-300 px-3 py-1 text-sm dark:border-zinc-700"
+      >
+        {loading ? "Loading…" : "Load my audit log"}
+      </button>
+      {error && <FormMessage tone="error">{error}</FormMessage>}
+      {logs.length > 0 && (
+        <ul className="max-h-64 space-y-2 overflow-y-auto text-xs">
+          {logs.map((log, i) => (
+            <li
+              key={i}
+              className="rounded border border-zinc-100 px-2 py-1 dark:border-zinc-900"
+            >
+              <span className="text-zinc-400">
+                {new Date(log.createdAt).toLocaleString()}
+              </span>{" "}
+              <strong>{log.action}</strong> {log.entityType}
+              {log.entityId ? ` #${log.entityId}` : ""}
+              {log.details ? ` — ${log.details}` : ""}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Panel>
   );
 }

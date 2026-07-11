@@ -1,12 +1,23 @@
-const P6_BASE = requireEnv("P6_BASE_URL");
-const P6_DB = requireEnv("P6_DATABASE_NAME");
-const P6_AUTHTOKEN = requireEnv("P6_AUTHTOKEN");
+function getP6Base(): string {
+  return requireEnv("P6_BASE_URL");
+}
+function getP6Db(): string {
+  return requireEnv("P6_DATABASE_NAME");
+}
+function getP6Authtoken(): string {
+  return requireEnv("P6_AUTHTOKEN");
+}
+
+const OWNER_EMAIL_UDF_TITLE =
+  process.env.P6_OWNER_EMAIL_UDF_TITLE ?? "Owner Email";
 
 const SESSION_TTL_MS = 10 * 60 * 1000;
 
 let sessionCookie: string | null = null;
 let sessionExpiresAt = 0;
 let loginInFlight: Promise<string> | null = null;
+let ownerEmailUdfTypeId: number | null = null;
+let ownerEmailUdfTypeLookup: Promise<number> | null = null;
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -15,13 +26,15 @@ function requireEnv(name: string): string {
 }
 
 function authHeaders(): Record<string, string> {
-  return {
-    authtoken: P6_AUTHTOKEN,
-  };
+  return { authtoken: getP6Authtoken() };
+}
+
+function escapeP6FilterValue(value: string): string {
+  return value.replace(/'/g, "''");
 }
 
 async function login(): Promise<string> {
-  const url = `${P6_BASE}/login?DatabaseName=${encodeURIComponent(P6_DB)}`;
+  const url = `${getP6Base()}/login?DatabaseName=${encodeURIComponent(getP6Db())}`;
   const res = await fetch(url, { method: "POST", headers: authHeaders() });
   if (!res.ok) {
     throw new P6Error(`P6 login failed (${res.status})`, res.status, await safeText(res));
@@ -51,7 +64,7 @@ async function p6Request(
   retry = true,
 ): Promise<Response> {
   const cookie = await getSession();
-  const res = await fetch(`${P6_BASE}${path}`, {
+  const res = await fetch(`${getP6Base()}${path}`, {
     ...init,
     headers: { ...authHeaders(), cookie, ...(init.headers ?? {}) },
   });
@@ -67,13 +80,34 @@ async function p6Fetch(path: string, retry = true): Promise<Response> {
   return p6Request(path, { method: "GET" }, retry);
 }
 
-// P6 write bodies are arrays of entities, and the API expects JSON.
+async function p6Read<T>(
+  resource: string,
+  fields: string,
+  filter?: string,
+): Promise<T[]> {
+  const params = new URLSearchParams({
+    DatabaseName: getP6Db(),
+    Fields: fields,
+  });
+  if (filter) params.set("Filter", filter);
+  const res = await p6Fetch(`/${resource}?${params.toString()}`);
+  if (!res.ok) {
+    throw new P6Error(
+      `P6 read ${resource} failed (${res.status})`,
+      res.status,
+      await safeText(res),
+    );
+  }
+  const data = (await res.json()) as T[] | null;
+  return Array.isArray(data) ? data : [];
+}
+
 async function p6Write(
   method: "POST" | "PUT",
   resource: string,
   entities: Record<string, unknown>[],
 ): Promise<unknown> {
-  const res = await p6Request(`/${resource}?DatabaseName=${encodeURIComponent(P6_DB)}`, {
+  const res = await p6Request(`/${resource}?DatabaseName=${encodeURIComponent(getP6Db())}`, {
     method,
     headers: { "content-type": "application/json" },
     body: JSON.stringify(entities),
@@ -116,12 +150,14 @@ export interface P6Project {
   ObjectId: string;
   Id: string;
   Name: string;
+  ParentEPSObjectId?: string;
 }
 
 export interface P6Eps {
   ObjectId: string;
   Id: string;
   Name: string;
+  ParentObjectId?: string;
 }
 
 export interface P6Wbs {
@@ -134,7 +170,9 @@ export interface P6Wbs {
 
 export interface P6Activity {
   ObjectId: number;
+  Id?: string;
   Name: string;
+  ProjectObjectId?: number;
   ProjectName?: string;
   OwnerIDArray?: number[];
   OwnerNamesArray?: string[];
@@ -143,66 +181,92 @@ export interface P6Activity {
   PrimaryResourceName?: string;
   PrimaryResourceObjectId?: number;
   Status?: string;
+  PercentComplete?: number;
   PlannedLaborUnits?: number;
   PlannedLaborCost?: number;
   ActualLaborUnits?: number;
   ActualLaborCost?: number;
+  PlannedNonLaborUnits?: number;
+  ActualNonLaborUnits?: number;
+  AtCompletionLaborUnits?: number;
+  AtCompletionNonLaborUnits?: number;
   PlannedStartDate?: string;
   PlannedFinishDate?: string;
+  ActualStartDate?: string;
+  ActualFinishDate?: string;
+  ExpectedFinishDate?: string;
+  TotalFloat?: number;
+  FreeFloat?: number;
 }
 
+export interface P6UdfType {
+  ObjectId: number;
+  Title?: string;
+  SubjectArea?: string;
+}
+
+export interface P6UdfValue {
+  ObjectId?: number;
+  ForeignObjectId: number;
+  Text?: string;
+  UDFTypeObjectId?: number;
+  UDFTypeTitle?: string;
+  UDFTypeSubjectArea?: string;
+}
+
+export interface P6ActivityStep {
+  ObjectId: number;
+  ActivityObjectId: number;
+  Name: string;
+  IsCompleted?: boolean;
+  PercentComplete?: number;
+  SequenceNumber?: number;
+}
+
+export interface P6ActivityComment {
+  ObjectId?: number;
+  ActivityObjectId: number;
+  CommentText: string;
+  CreateDate?: string;
+  CreateUser?: string;
+  UserObjectId?: number;
+}
+
+export interface P6ResourceAssignment {
+  ObjectId: number;
+  ActivityObjectId: number;
+  ResourceObjectId?: number;
+  ResourceName?: string;
+  ResourceType?: string;
+  PlannedUnits?: number;
+  ActualUnits?: number;
+  AtCompletionUnits?: number;
+  PlannedCost?: number;
+  ActualCost?: number;
+  RemainingUnits?: number;
+}
+
+export const ACTIVITY_FIELDS =
+  "Id,Name,ObjectId,ProjectObjectId,ProjectName,Status,PercentComplete,PlannedLaborUnits,PlannedLaborCost,ActualLaborUnits,ActualLaborCost,PlannedNonLaborUnits,ActualNonLaborUnits,AtCompletionLaborUnits,AtCompletionNonLaborUnits,PlannedStartDate,PlannedFinishDate,ActualStartDate,ActualFinishDate,ExpectedFinishDate,TotalFloat,FreeFloat";
+
 export async function getProjects(): Promise<P6Project[]> {
-  const params = new URLSearchParams({
-    DatabaseName: P6_DB,
-    Fields: "Name,ObjectId,Id",
-    Filter: "",
-  });
-  const res = await p6Fetch(`/project?${params.toString()}`);
-  if (!res.ok) {
-    throw new P6Error(`P6 projects fetch failed (${res.status})`, res.status, await safeText(res));
-  }
-  const data = (await res.json()) as P6Project[] | null;
-  return Array.isArray(data) ? data : [];
+  return p6Read<P6Project>("project", "Name,ObjectId,Id,ParentEPSObjectId");
 }
 
 export async function getEps(): Promise<P6Eps[]> {
-  const params = new URLSearchParams({
-    DatabaseName: P6_DB,
-    Fields: "Name,ObjectId,Id",
-  });
-  const res = await p6Fetch(`/eps?${params.toString()}`);
-  if (!res.ok) {
-    throw new P6Error(`P6 EPS fetch failed (${res.status})`, res.status, await safeText(res));
-  }
-  const data = (await res.json()) as P6Eps[] | null;
-  return Array.isArray(data) ? data : [];
+  return p6Read<P6Eps>("eps", "Name,ObjectId,Id,ParentObjectId");
 }
 
 export async function getUsers(): Promise<P6User[]> {
-  const params = new URLSearchParams({
-    DatabaseName: P6_DB,
-    Fields: "ObjectId,Name,EmailAddress",
-  });
-  const res = await p6Fetch(`/user?${params.toString()}`);
-  if (!res.ok) {
-    throw new P6Error(`P6 users fetch failed (${res.status})`, res.status, await safeText(res));
-  }
-  const data = (await res.json()) as P6User[] | null;
-  return Array.isArray(data) ? data : [];
+  return p6Read<P6User>("user", "ObjectId,Name,EmailAddress");
 }
 
 export async function getProjectWbs(projectObjectId: string): Promise<P6Wbs[]> {
-  const params = new URLSearchParams({
-    DatabaseName: P6_DB,
-    Fields: "Name,ObjectId,Code,ProjectObjectId,ParentObjectId",
-    Filter: `ProjectObjectId:eq:'${projectObjectId}'`,
-  });
-  const res = await p6Fetch(`/wbs?${params.toString()}`);
-  if (!res.ok) {
-    throw new P6Error(`P6 WBS fetch failed (${res.status})`, res.status, await safeText(res));
-  }
-  const data = (await res.json()) as P6Wbs[] | null;
-  return Array.isArray(data) ? data : [];
+  return p6Read<P6Wbs>(
+    "wbs",
+    "Name,ObjectId,Code,ProjectObjectId,ParentObjectId",
+    `ProjectObjectId:eq:'${projectObjectId}'`,
+  );
 }
 
 export interface CreateProjectInput {
@@ -228,15 +292,18 @@ export async function createActivity(input: CreateActivityInput): Promise<unknow
   return p6Write("POST", "activity", [{ ...input }]);
 }
 
-// Only the fields the admin UI exposes; ObjectId identifies the target activity.
 export interface UpdateActivityInput {
   ObjectId: number;
   Name?: string;
   ActivityOwnerUserId?: number;
+  PercentComplete?: number;
   PlannedLaborUnits?: number;
   PlannedLaborCost?: number;
   PlannedStartDate?: string;
   PlannedFinishDate?: string;
+  ActualStartDate?: string;
+  ActualFinishDate?: string;
+  ExpectedFinishDate?: string;
 }
 
 export async function updateActivity(input: UpdateActivityInput): Promise<unknown> {
@@ -245,7 +312,7 @@ export async function updateActivity(input: UpdateActivityInput): Promise<unknow
 
 export async function deleteActivity(objectId: number): Promise<unknown> {
   const params = new URLSearchParams({
-    DatabaseName: P6_DB,
+    DatabaseName: getP6Db(),
     ObjectId: String(objectId),
   });
   const res = await p6Request(`/activity?${params.toString()}`, { method: "DELETE" });
@@ -263,53 +330,196 @@ export async function deleteActivity(objectId: number): Promise<unknown> {
 export async function getProjectActivities(
   projectObjectId: string,
 ): Promise<P6Activity[]> {
-  const params = new URLSearchParams({
-    DatabaseName: P6_DB,
-    Fields:
-      "ProjectName,Name,ObjectId,OwnerIDArray,OwnerNamesArray,ActivityOwnerUserId,PrimaryResourceId,PrimaryResourceName,PrimaryResourceObjectId,Status,PlannedLaborUnits,PlannedLaborCost,ActualLaborUnits,ActualLaborCost,PlannedStartDate,PlannedFinishDate",
-    Filter: `ProjectObjectId:eq:'${projectObjectId}'`,
-  });
-  const res = await p6Fetch(`/activity?${params.toString()}`);
-  if (!res.ok) {
-    throw new P6Error(
-      `P6 activities fetch failed (${res.status})`,
-      res.status,
-      await safeText(res),
-    );
+  return p6Read<P6Activity>(
+    "activity",
+    ACTIVITY_FIELDS,
+    `ProjectObjectId:eq:'${projectObjectId}'`,
+  );
+}
+
+export async function getActivitiesByIds(ids: number[]): Promise<P6Activity[]> {
+  if (ids.length === 0) return [];
+  const chunks: number[][] = [];
+  for (let i = 0; i < ids.length; i += 50) {
+    chunks.push(ids.slice(i, i + 50));
   }
-  const data = (await res.json()) as P6Activity[] | null;
-  return Array.isArray(data) ? data : [];
+  const results: P6Activity[] = [];
+  for (const chunk of chunks) {
+    const filter = chunk.map((id) => `ObjectId:eq:'${id}'`).join(":or:");
+    const batch = await p6Read<P6Activity>("activity", ACTIVITY_FIELDS, filter);
+    results.push(...batch);
+  }
+  return results;
 }
 
 export async function findUserByEmail(email: string): Promise<P6User | null> {
-  const params = new URLSearchParams({
-    DatabaseName: P6_DB,
-    Fields: "ObjectId,EmailAddress,Name",
-    Filter: `EmailAddress:eq:'${email}'`,
-  });
-  const res = await p6Fetch(`/user?${params.toString()}`);
-  if (!res.ok) {
-    throw new P6Error(`P6 user lookup failed (${res.status})`, res.status, await safeText(res));
-  }
-  const data = (await res.json()) as P6User[] | P6User | null;
-  if (!data) return null;
-  const list = Array.isArray(data) ? data : [data];
+  const list = await p6Read<P6User>(
+    "user",
+    "ObjectId,EmailAddress,Name",
+    `EmailAddress:eq:'${escapeP6FilterValue(email)}'`,
+  );
   return list.length > 0 ? list[0] : null;
 }
 
 export async function findActivitiesForUser(userId: number): Promise<P6Activity[]> {
-  const params = new URLSearchParams({
-    DatabaseName: P6_DB,
-    Fields:
-      "ProjectName,Name,ObjectId,OwnerIDArray,OwnerNamesArray,ActivityOwnerUserId,PrimaryResourceId,PrimaryResourceName,PrimaryResourceObjectId",
-    Filter: `ActivityOwnerUserId:eq:'${userId}'`,
-  });
-  const res = await p6Fetch(`/activity?${params.toString()}`);
-  if (!res.ok) {
-    throw new P6Error(`P6 activities fetch failed (${res.status})`, res.status, await safeText(res));
+  return p6Read<P6Activity>(
+    "activity",
+    ACTIVITY_FIELDS,
+    `ActivityOwnerUserId:eq:'${userId}'`,
+  );
+}
+
+export async function getOwnerEmailUdfTypeObjectId(): Promise<number> {
+  if (ownerEmailUdfTypeId) return ownerEmailUdfTypeId;
+  if (ownerEmailUdfTypeLookup) return ownerEmailUdfTypeLookup;
+
+  ownerEmailUdfTypeLookup = (async () => {
+    const types = await p6Read<P6UdfType>(
+      "udfType",
+      "ObjectId,Title,SubjectArea",
+      `Title:eq:'${escapeP6FilterValue(OWNER_EMAIL_UDF_TITLE)}'`,
+    );
+    if (types.length === 0) {
+      const allActivityTypes = await p6Read<P6UdfType>(
+        "udfType",
+        "ObjectId,Title,SubjectArea",
+        `SubjectArea:eq:'Activity'`,
+      );
+      const match = allActivityTypes.find(
+        (t) =>
+          t.Title?.toLowerCase() === OWNER_EMAIL_UDF_TITLE.toLowerCase() ||
+          t.Title?.toLowerCase().includes("owner") &&
+            t.Title?.toLowerCase().includes("email"),
+      );
+      if (!match) {
+        throw new P6Error(
+          `Owner Email UDF type not found (title: "${OWNER_EMAIL_UDF_TITLE}")`,
+          404,
+        );
+      }
+      ownerEmailUdfTypeId = match.ObjectId;
+      return match.ObjectId;
+    }
+    ownerEmailUdfTypeId = types[0].ObjectId;
+    return types[0].ObjectId;
+  })();
+
+  return ownerEmailUdfTypeLookup;
+}
+
+export async function findActivityIdsByOwnerEmail(
+  email: string,
+): Promise<number[]> {
+  const udfTypeId = await getOwnerEmailUdfTypeObjectId();
+  const values = await p6Read<P6UdfValue>(
+    "udfValue",
+    "ForeignObjectId,Text,UDFTypeObjectId",
+    `UDFTypeObjectId:eq:'${udfTypeId}':and:Text:eq:'${escapeP6FilterValue(email.toLowerCase())}'`,
+  );
+  return values.map((v) => v.ForeignObjectId);
+}
+
+export async function getActivitySteps(
+  activityObjectIds: number[],
+): Promise<P6ActivityStep[]> {
+  if (activityObjectIds.length === 0) return [];
+  const chunks: number[][] = [];
+  for (let i = 0; i < activityObjectIds.length; i += 25) {
+    chunks.push(activityObjectIds.slice(i, i + 25));
   }
-  const data = (await res.json()) as P6Activity[] | null;
-  return Array.isArray(data) ? data : [];
+  const results: P6ActivityStep[] = [];
+  for (const chunk of chunks) {
+    const filter = chunk
+      .map((id) => `ActivityObjectId:eq:'${id}'`)
+      .join(":or:");
+    const batch = await p6Read<P6ActivityStep>(
+      "activityStep",
+      "ObjectId,ActivityObjectId,Name,IsCompleted,PercentComplete,SequenceNumber",
+      filter,
+    );
+    results.push(...batch);
+  }
+  return results.sort(
+    (a, b) => (a.SequenceNumber ?? 0) - (b.SequenceNumber ?? 0),
+  );
+}
+
+export async function getActivityComments(
+  activityObjectIds: number[],
+): Promise<P6ActivityComment[]> {
+  if (activityObjectIds.length === 0) return [];
+  const chunks: number[][] = [];
+  for (let i = 0; i < activityObjectIds.length; i += 25) {
+    chunks.push(activityObjectIds.slice(i, i + 25));
+  }
+  const results: P6ActivityComment[] = [];
+  for (const chunk of chunks) {
+    const filter = chunk
+      .map((id) => `ActivityObjectId:eq:'${id}'`)
+      .join(":or:");
+    const batch = await p6Read<P6ActivityComment>(
+      "activityComment",
+      "ObjectId,ActivityObjectId,CommentText,CreateDate,CreateUser,UserObjectId",
+      filter,
+    );
+    results.push(...batch);
+  }
+  return results.sort(
+    (a, b) =>
+      new Date(b.CreateDate ?? 0).getTime() -
+      new Date(a.CreateDate ?? 0).getTime(),
+  );
+}
+
+export async function getResourceAssignments(
+  activityObjectIds: number[],
+): Promise<P6ResourceAssignment[]> {
+  if (activityObjectIds.length === 0) return [];
+  const chunks: number[][] = [];
+  for (let i = 0; i < activityObjectIds.length; i += 25) {
+    chunks.push(activityObjectIds.slice(i, i + 25));
+  }
+  const results: P6ResourceAssignment[] = [];
+  for (const chunk of chunks) {
+    const filter = chunk
+      .map((id) => `ActivityObjectId:eq:'${id}'`)
+      .join(":or:");
+    const batch = await p6Read<P6ResourceAssignment>(
+      "resourceAssignment",
+      "ObjectId,ActivityObjectId,ResourceObjectId,ResourceName,ResourceType,PlannedUnits,ActualUnits,AtCompletionUnits,PlannedCost,ActualCost,RemainingUnits",
+      filter,
+    );
+    results.push(...batch);
+  }
+  return results;
+}
+
+export async function updateActivityStep(input: {
+  ObjectId: number;
+  IsCompleted: boolean;
+}): Promise<unknown> {
+  return p6Write("PUT", "activityStep", [input]);
+}
+
+export async function createActivityComment(input: {
+  ActivityObjectId: number;
+  CommentText: string;
+  UserObjectId: number;
+}): Promise<unknown> {
+  return p6Write("POST", "activityComment", [input]);
+}
+
+export interface UpdateResourceAssignmentInput {
+  ObjectId: number;
+  ActualUnits?: number;
+  AtCompletionUnits?: number;
+  ActualCost?: number;
+}
+
+export async function updateResourceAssignment(
+  input: UpdateResourceAssignmentInput,
+): Promise<unknown> {
+  return p6Write("PUT", "resourceAssignment", [{ ...input }]);
 }
 
 async function safeText(res: Response): Promise<string | undefined> {

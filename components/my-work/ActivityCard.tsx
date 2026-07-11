@@ -1,0 +1,746 @@
+"use client";
+
+import { useState } from "react";
+import type { MyActivity, FieldPolicies } from "./types";
+import {
+  apiCall,
+  fmtDate,
+  fmtNum,
+  jsonInit,
+  policy,
+  toDateInput,
+  toP6Date,
+  weekDates,
+} from "./types";
+
+function EditableDate({
+  label,
+  value,
+  editable,
+  onSave,
+}: {
+  label: string;
+  value?: string;
+  editable: boolean;
+  onSave: (v: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(toDateInput(value));
+  const [busy, setBusy] = useState(false);
+
+  if (!editable) {
+    return (
+      <div>
+        <dt className="text-xs text-zinc-500">{label}</dt>
+        <dd className="text-sm">{fmtDate(value)}</dd>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <dt className="text-xs text-zinc-500">{label}</dt>
+      {editing ? (
+        <dd className="flex items-center gap-2">
+          <input
+            type="date"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            className="rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+          />
+          <button
+            type="button"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              await onSave(draft);
+              setBusy(false);
+              setEditing(false);
+            }}
+            className="text-xs text-blue-600"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditing(false)}
+            className="text-xs text-zinc-500"
+          >
+            Cancel
+          </button>
+        </dd>
+      ) : (
+        <dd className="text-sm">
+          {fmtDate(value)}{" "}
+          <button
+            type="button"
+            onClick={() => {
+              setDraft(toDateInput(value));
+              setEditing(true);
+            }}
+            className="ml-1 text-xs text-blue-600"
+          >
+            Edit
+          </button>
+        </dd>
+      )}
+    </div>
+  );
+}
+
+function TimesheetGrid({
+  activity,
+  policies,
+  onSaved,
+}: {
+  activity: MyActivity;
+  policies?: FieldPolicies;
+  onSaved: () => void;
+}) {
+  const dates = weekDates();
+  const [values, setValues] = useState<Record<string, number>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!policy(policies, "actualLaborUnits").editable) return null;
+  if (activity.laborResources.length === 0) return null;
+
+  async function submit() {
+    setBusy(true);
+    setError(null);
+    const entries = activity.laborResources.flatMap((r) =>
+      dates
+        .map((d) => ({
+          activityObjectId: activity.objectId,
+          resourceAssignmentObjectId: r.objectId,
+          workDate: d,
+          hours: values[`${r.objectId}-${d}`] ?? 0,
+        }))
+        .filter((e) => e.hours > 0),
+    );
+    const res = await apiCall("/api/timesheet", jsonInit("POST", { entries }));
+    setBusy(false);
+    if (!res.ok) setError(res.error ?? "Failed to save timesheet");
+    else onSaved();
+  }
+
+  return (
+    <div className="mt-3 rounded border border-zinc-200 p-3 dark:border-zinc-800">
+      <h4 className="mb-2 text-xs font-semibold uppercase text-zinc-500">
+        Labor timesheet (hours)
+      </h4>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-left text-zinc-500">
+              <th className="py-1 pr-2">Resource</th>
+              {dates.map((d) => (
+                <th key={d} className="px-1 py-1">
+                  {d.slice(5)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {activity.laborResources.map((r) => (
+              <tr key={r.objectId}>
+                <td className="py-1 pr-2">{r.resourceName ?? r.objectId}</td>
+                {dates.map((d) => {
+                  const key = `${r.objectId}-${d}`;
+                  return (
+                    <td key={key} className="px-1 py-1">
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.25}
+                        className="w-14 rounded border border-zinc-300 px-1 dark:border-zinc-700 dark:bg-zinc-900"
+                        value={values[key] ?? ""}
+                        onChange={(e) =>
+                          setValues((v) => ({
+                            ...v,
+                            [key]: Number(e.target.value) || 0,
+                          }))
+                        }
+                      />
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => void submit()}
+        className="mt-2 rounded bg-blue-600 px-3 py-1 text-xs text-white disabled:opacity-50"
+      >
+        {busy ? "Saving…" : "Save timesheet"}
+      </button>
+    </div>
+  );
+}
+
+function NonlaborSection({
+  activity,
+  policies,
+  onSaved,
+}: {
+  activity: MyActivity;
+  policies?: FieldPolicies;
+  onSaved: () => void;
+}) {
+  const dates = weekDates();
+  const [values, setValues] = useState<Record<string, number>>({});
+  const [totals, setTotals] = useState<Record<number, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const canDaily = policy(policies, "actualNonLaborUnits").editable;
+  const canAtComplete = policy(policies, "atCompleteNonLaborUnits").editable;
+  if (!canDaily && !canAtComplete) return null;
+  if (activity.nonLaborResources.length === 0) return null;
+
+  async function submitDaily() {
+    setBusy(true);
+    setError(null);
+    const entries = activity.nonLaborResources.flatMap((r) =>
+      dates
+        .map((d) => ({
+          activityObjectId: activity.objectId,
+          resourceAssignmentObjectId: r.objectId,
+          workDate: d,
+          units: values[`${r.objectId}-${d}`] ?? 0,
+        }))
+        .filter((e) => e.units > 0),
+    );
+    const res = await apiCall("/api/nonlabor", jsonInit("POST", { entries }));
+    setBusy(false);
+    if (!res.ok) setError(res.error ?? "Failed to save");
+    else onSaved();
+  }
+
+  async function submitTotal(resourceId: number) {
+    const units = Number(totals[resourceId]);
+    if (!Number.isFinite(units)) return;
+    setBusy(true);
+    setError(null);
+    const res = await apiCall(
+      "/api/nonlabor",
+      jsonInit("POST", {
+        runningTotal: { resourceAssignmentObjectId: resourceId, units },
+      }),
+    );
+    setBusy(false);
+    if (!res.ok) setError(res.error ?? "Failed to save");
+    else onSaved();
+  }
+
+  return (
+    <div className="mt-3 rounded border border-zinc-200 p-3 dark:border-zinc-800">
+      <h4 className="mb-2 text-xs font-semibold uppercase text-zinc-500">
+        Non-labor tracking
+      </h4>
+      {canDaily && (
+        <>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-zinc-500">
+                  <th className="py-1 pr-2">Resource</th>
+                  {dates.map((d) => (
+                    <th key={d} className="px-1 py-1">
+                      {d.slice(5)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {activity.nonLaborResources.map((r) => (
+                  <tr key={r.objectId}>
+                    <td className="py-1 pr-2">{r.resourceName ?? r.objectId}</td>
+                    {dates.map((d) => {
+                      const key = `${r.objectId}-${d}`;
+                      return (
+                        <td key={key} className="px-1 py-1">
+                          <input
+                            type="number"
+                            min={0}
+                            step={0.1}
+                            className="w-14 rounded border border-zinc-300 px-1 dark:border-zinc-700 dark:bg-zinc-900"
+                            value={values[key] ?? ""}
+                            onChange={(e) =>
+                              setValues((v) => ({
+                                ...v,
+                                [key]: Number(e.target.value) || 0,
+                              }))
+                            }
+                          />
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void submitDaily()}
+            className="mt-2 rounded bg-blue-600 px-3 py-1 text-xs text-white disabled:opacity-50"
+          >
+            Save daily non-labor
+          </button>
+        </>
+      )}
+      {canAtComplete && (
+        <ul className="mt-3 space-y-2">
+          {activity.nonLaborResources.map((r) => (
+            <li key={r.objectId} className="flex items-center gap-2 text-xs">
+              <span>{r.resourceName ?? r.objectId}</span>
+              <input
+                type="number"
+                step={0.1}
+                placeholder="Running total"
+                className="w-24 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-900"
+                value={totals[r.objectId] ?? ""}
+                onChange={(e) =>
+                  setTotals((t) => ({ ...t, [r.objectId]: e.target.value }))
+                }
+              />
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void submitTotal(r.objectId)}
+                className="text-blue-600"
+              >
+                Set total
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+    </div>
+  );
+}
+
+export function ActivityCard({
+  activity,
+  policies,
+  onRefresh,
+}: {
+  activity: MyActivity;
+  policies?: FieldPolicies;
+  onRefresh: () => void;
+}) {
+  const [comment, setComment] = useState("");
+  const [pct, setPct] = useState(
+    activity.percentComplete != null ? String(activity.percentComplete) : "",
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function updateActivity(fields: Record<string, unknown>) {
+    setBusy(true);
+    setError(null);
+    const res = await apiCall(
+      `/api/activities/${activity.objectId}`,
+      jsonInit("PUT", fields),
+    );
+    setBusy(false);
+    if (!res.ok) setError(res.error ?? "Update failed");
+    else onRefresh();
+  }
+
+  async function addComment() {
+    if (!comment.trim()) return;
+    setBusy(true);
+    const res = await apiCall(
+      `/api/activities/${activity.objectId}/comments`,
+      jsonInit("POST", { commentText: comment.trim() }),
+    );
+    setBusy(false);
+    if (!res.ok) setError(res.error ?? "Comment failed");
+    else {
+      setComment("");
+      onRefresh();
+    }
+  }
+
+  async function toggleStep(stepId: number, completed: boolean) {
+    setBusy(true);
+    const res = await apiCall(
+      `/api/activity-steps/${stepId}`,
+      jsonInit("PUT", { isCompleted: completed }),
+    );
+    setBusy(false);
+    if (!res.ok) setError(res.error ?? "Step update failed");
+    else onRefresh();
+  }
+
+  async function updateAssignment(
+    id: number,
+    fields: Record<string, unknown>,
+    resourceType: string,
+  ) {
+    setBusy(true);
+    const res = await apiCall(
+      `/api/resource-assignments/${id}`,
+      jsonInit("PUT", { ...fields, resourceType }),
+    );
+    setBusy(false);
+    if (!res.ok) setError(res.error ?? "Assignment update failed");
+    else onRefresh();
+  }
+
+  const show = (key: string) => policy(policies, key).visible;
+  const edit = (key: string) => policy(policies, key).editable;
+
+  return (
+    <article className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+      <header className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {show("activityId") && (
+          <div>
+            <span className="text-xs text-zinc-500">Activity ID</span>
+            <p className="text-sm font-medium">{activity.id ?? activity.objectId}</p>
+          </div>
+        )}
+        {show("activityName") && (
+          <div className="sm:col-span-2">
+            <span className="text-xs text-zinc-500">Activity Name</span>
+            <p className="text-sm font-medium">{activity.name}</p>
+          </div>
+        )}
+        {show("percentComplete") && (
+          <div>
+            <span className="text-xs text-zinc-500">% Complete</span>
+            {edit("percentComplete") ? (
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={pct}
+                  onChange={(e) => setPct(e.target.value)}
+                  className="w-20 rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                />
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    void updateActivity({ PercentComplete: Number(pct) })
+                  }
+                  className="text-xs text-blue-600"
+                >
+                  Save
+                </button>
+              </div>
+            ) : (
+              <p className="text-sm">{fmtNum(activity.percentComplete, 0)}%</p>
+            )}
+          </div>
+        )}
+        {show("plannedStart") && (
+          <div>
+            <span className="text-xs text-zinc-500">Planned Start</span>
+            <p className="text-sm">{fmtDate(activity.plannedStart)}</p>
+          </div>
+        )}
+        {show("plannedFinish") && (
+          <div>
+            <span className="text-xs text-zinc-500">Planned Finish</span>
+            <p className="text-sm">{fmtDate(activity.plannedFinish)}</p>
+          </div>
+        )}
+      </header>
+
+      <dl className="mt-3 grid gap-3 border-t border-zinc-100 pt-3 sm:grid-cols-3 dark:border-zinc-900">
+        {show("actualStart") && (
+          <EditableDate
+            label="Actual Start"
+            value={activity.actualStart}
+            editable={edit("actualStart")}
+            onSave={(v) => updateActivity({ ActualStartDate: toP6Date(v) })}
+          />
+        )}
+        {show("actualFinish") && (
+          <EditableDate
+            label="Actual Finish"
+            value={activity.actualFinish}
+            editable={edit("actualFinish")}
+            onSave={(v) => updateActivity({ ActualFinishDate: toP6Date(v) })}
+          />
+        )}
+        {show("expectedFinish") && (
+          <EditableDate
+            label="Expected Finish"
+            value={activity.expectedFinish}
+            editable={edit("expectedFinish")}
+            onSave={(v) => updateActivity({ ExpectedFinishDate: toP6Date(v) })}
+          />
+        )}
+      </dl>
+
+      {show("activityStep") && activity.steps.length > 0 && (
+        <section className="mt-3">
+          <h4 className="text-xs font-semibold uppercase text-zinc-500">
+            Activity Steps
+          </h4>
+          <ul className="mt-1 space-y-1">
+            {activity.steps.map((step) => (
+              <li key={step.ObjectId} className="flex items-center gap-2 text-sm">
+                {edit("activityStep") ? (
+                  <input
+                    type="checkbox"
+                    checked={!!step.IsCompleted}
+                    disabled={busy}
+                    onChange={(e) =>
+                      void toggleStep(step.ObjectId, e.target.checked)
+                    }
+                  />
+                ) : (
+                  <span>{step.IsCompleted ? "✓" : "○"}</span>
+                )}
+                <span
+                  className={
+                    step.IsCompleted ? "text-zinc-400 line-through" : ""
+                  }
+                >
+                  {step.Name}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {(show("resourceName") || show("budgetedLaborUnits")) &&
+        activity.laborResources.length > 0 && (
+          <section className="mt-3">
+            <h4 className="text-xs font-semibold uppercase text-zinc-500">
+              Labor Resources
+            </h4>
+            <div className="mt-1 overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-zinc-500">
+                    {show("resourceName") && <th className="py-1">Resource</th>}
+                    {show("budgetedLaborUnits") && <th>Budgeted</th>}
+                    {show("atCompleteLaborUnits") && <th>At Complete</th>}
+                    {show("actualLaborUnits") && <th>Actual</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {activity.laborResources.map((r) => (
+                    <tr key={r.objectId}>
+                      {show("resourceName") && (
+                        <td className="py-1">{r.resourceName ?? r.objectId}</td>
+                      )}
+                      {show("budgetedLaborUnits") && (
+                        <td>{fmtNum(r.plannedUnits)}</td>
+                      )}
+                      {show("atCompleteLaborUnits") && (
+                        <td>
+                          {edit("atCompleteLaborUnits") ? (
+                            <input
+                              type="number"
+                              step={0.1}
+                              defaultValue={r.atCompletionUnits ?? ""}
+                              onBlur={(e) =>
+                                void updateAssignment(
+                                  r.objectId,
+                                  {
+                                    atCompletionUnits: Number(e.target.value),
+                                  },
+                                  "labor",
+                                )
+                              }
+                              className="w-20 rounded border border-zinc-300 px-1 dark:border-zinc-700 dark:bg-zinc-900"
+                            />
+                          ) : (
+                            fmtNum(r.atCompletionUnits)
+                          )}
+                        </td>
+                      )}
+                      {show("actualLaborUnits") && (
+                        <td>{fmtNum(r.actualUnits)}</td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
+      {(show("resourceName") || show("budgetedNonLaborUnits")) &&
+        activity.nonLaborResources.length > 0 && (
+          <section className="mt-3">
+            <h4 className="text-xs font-semibold uppercase text-zinc-500">
+              Non-Labor Resources
+            </h4>
+            <div className="mt-1 overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-zinc-500">
+                    {show("resourceName") && <th className="py-1">Resource</th>}
+                    {show("budgetedNonLaborUnits") && <th>Budgeted</th>}
+                    {show("atCompleteNonLaborUnits") && <th>At Complete</th>}
+                    {show("actualNonLaborUnits") && <th>Actual</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {activity.nonLaborResources.map((r) => (
+                    <tr key={r.objectId}>
+                      {show("resourceName") && (
+                        <td className="py-1">{r.resourceName ?? r.objectId}</td>
+                      )}
+                      {show("budgetedNonLaborUnits") && (
+                        <td>{fmtNum(r.plannedUnits)}</td>
+                      )}
+                      {show("atCompleteNonLaborUnits") && (
+                        <td>
+                          {edit("atCompleteNonLaborUnits") ? (
+                            <input
+                              type="number"
+                              step={0.1}
+                              defaultValue={r.atCompletionUnits ?? ""}
+                              onBlur={(e) =>
+                                void updateAssignment(
+                                  r.objectId,
+                                  {
+                                    atCompletionUnits: Number(e.target.value),
+                                  },
+                                  "nonlabor",
+                                )
+                              }
+                              className="w-20 rounded border border-zinc-300 px-1 dark:border-zinc-700 dark:bg-zinc-900"
+                            />
+                          ) : (
+                            fmtNum(r.atCompletionUnits)
+                          )}
+                        </td>
+                      )}
+                      {show("actualNonLaborUnits") && (
+                        <td>{fmtNum(r.actualUnits)}</td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
+      {(show("materialName") || show("budgetedMaterialCost")) &&
+        activity.materialResources.length > 0 && (
+          <section className="mt-3">
+            <h4 className="text-xs font-semibold uppercase text-zinc-500">
+              Materials
+            </h4>
+            <div className="mt-1 overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-zinc-500">
+                    {show("materialName") && <th className="py-1">Material</th>}
+                    {show("budgetedMaterialCost") && <th>Budgeted Cost</th>}
+                    {show("actualMaterialCost") && <th>Actual Cost</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {activity.materialResources.map((r) => (
+                    <tr key={r.objectId}>
+                      {show("materialName") && (
+                        <td className="py-1">{r.resourceName ?? r.objectId}</td>
+                      )}
+                      {show("budgetedMaterialCost") && (
+                        <td>{fmtNum(r.plannedCost, 0)}</td>
+                      )}
+                      {show("actualMaterialCost") && (
+                        <td>
+                          {edit("actualMaterialCost") ? (
+                            <input
+                              type="number"
+                              step={1}
+                              defaultValue={r.actualCost ?? ""}
+                              onBlur={(e) =>
+                                void updateAssignment(
+                                  r.objectId,
+                                  { actualCost: Number(e.target.value) },
+                                  "material",
+                                )
+                              }
+                              className="w-24 rounded border border-zinc-300 px-1 dark:border-zinc-700 dark:bg-zinc-900"
+                            />
+                          ) : (
+                            fmtNum(r.actualCost, 0)
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
+      <TimesheetGrid
+        activity={activity}
+        policies={policies}
+        onSaved={onRefresh}
+      />
+      <NonlaborSection
+        activity={activity}
+        policies={policies}
+        onSaved={onRefresh}
+      />
+
+      {show("activityComment") && (
+        <section className="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-900">
+          <h4 className="text-xs font-semibold uppercase text-zinc-500">
+            Comments
+          </h4>
+          {activity.comments.length > 0 && (
+            <ul className="mt-1 space-y-1 text-sm text-zinc-600 dark:text-zinc-400">
+              {activity.comments.map((c, i) => (
+                <li key={c.ObjectId ?? i}>
+                  <span className="text-xs text-zinc-400">
+                    {c.CreateUser ?? "User"} · {fmtDate(c.CreateDate)}
+                  </span>
+                  <p>{c.CommentText}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+          {edit("activityComment") && (
+            <div className="mt-2 flex gap-2">
+              <input
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                placeholder="Add a comment…"
+                className="flex-1 rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              />
+              <button
+                type="button"
+                disabled={busy || !comment.trim()}
+                onClick={() => void addComment()}
+                className="rounded bg-blue-600 px-3 py-1 text-xs text-white disabled:opacity-50"
+              >
+                Post
+              </button>
+            </div>
+          )}
+        </section>
+      )}
+
+      {error && (
+        <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>
+      )}
+    </article>
+  );
+}
