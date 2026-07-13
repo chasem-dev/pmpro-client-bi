@@ -10,6 +10,7 @@ import {
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityCard } from "@/components/my-work/ActivityCard";
+import { ProjectsSection } from "@/components/my-work/ProjectsSection";
 import type { MyActivitiesResponse, MyActivity } from "@/components/my-work/types";
 import { isAdminUser } from "@/lib/admin";
 
@@ -120,6 +121,8 @@ export default function Home() {
             {loading ? "Refreshing…" : "Refresh"}
           </button>
         </header>
+
+        <ProjectsSection />
 
         <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">
