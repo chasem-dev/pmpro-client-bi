@@ -5,13 +5,16 @@ import {
   SignInButton,
   SignUpButton,
   UserButton,
+  useUser,
 } from "@clerk/nextjs";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityCard } from "@/components/my-work/ActivityCard";
 import type { MyActivitiesResponse, MyActivity } from "@/components/my-work/types";
+import { isAdminUser } from "@/lib/admin";
 
 export default function Home() {
+  const { user } = useUser();
   const [activities, setActivities] = useState<MyActivity[]>([]);
   const [policies, setPolicies] = useState<MyActivitiesResponse["policies"]>();
   const [loading, setLoading] = useState(true);
@@ -71,12 +74,14 @@ export default function Home() {
           <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
             PMPro Update Tool
           </span>
-          <Link
-            href="/admin"
-            className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
-          >
-            Admin
-          </Link>
+          {isAdminUser(user?.id) && (
+            <Link
+              href="/admin"
+              className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+            >
+              Admin
+            </Link>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Show when="signed-out">
