@@ -31,7 +31,7 @@ function EditableDate({
   if (!editable) {
     return (
       <div>
-        <dt className="text-xs text-zinc-500">{label}</dt>
+        <dt className="text-xs text-muted-foreground">{label}</dt>
         <dd className="text-sm">{fmtDate(value)}</dd>
       </div>
     );
@@ -39,14 +39,14 @@ function EditableDate({
 
   return (
     <div>
-      <dt className="text-xs text-zinc-500">{label}</dt>
+      <dt className="text-xs text-muted-foreground">{label}</dt>
       {editing ? (
         <dd className="flex items-center gap-2">
           <input
             type="date"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            className="rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            className="rounded border border-brand-border px-2 py-1 text-sm"
           />
           <button
             type="button"
@@ -57,14 +57,14 @@ function EditableDate({
               setBusy(false);
               setEditing(false);
             }}
-            className="text-xs text-blue-600"
+            className="text-xs text-secondary"
           >
             Save
           </button>
           <button
             type="button"
             onClick={() => setEditing(false)}
-            className="text-xs text-zinc-500"
+            className="text-xs text-muted-foreground"
           >
             Cancel
           </button>
@@ -78,7 +78,7 @@ function EditableDate({
               setDraft(toDateInput(value));
               setEditing(true);
             }}
-            className="ml-1 text-xs text-blue-600"
+            className="ml-1 text-xs text-secondary"
           >
             Edit
           </button>
@@ -125,14 +125,14 @@ function TimesheetGrid({
   }
 
   return (
-    <div className="mt-3 rounded border border-zinc-200 p-3 dark:border-zinc-800">
-      <h4 className="mb-2 text-xs font-semibold uppercase text-zinc-500">
+    <div className="mt-3 rounded border border-brand-border p-3">
+      <h4 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
         Labor timesheet (hours)
       </h4>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="text-left text-zinc-500">
+            <tr className="text-left text-muted-foreground">
               <th className="py-1 pr-2">Resource</th>
               {dates.map((d) => (
                 <th key={d} className="px-1 py-1">
@@ -153,7 +153,7 @@ function TimesheetGrid({
                         type="number"
                         min={0}
                         step={0.25}
-                        className="w-14 rounded border border-zinc-300 px-1 dark:border-zinc-700 dark:bg-zinc-900"
+                        className="w-14 rounded border border-brand-border px-1"
                         value={values[key] ?? ""}
                         onChange={(e) =>
                           setValues((v) => ({
@@ -175,7 +175,7 @@ function TimesheetGrid({
         type="button"
         disabled={busy}
         onClick={() => void submit()}
-        className="mt-2 rounded bg-blue-600 px-3 py-1 text-xs text-white disabled:opacity-50"
+        className="mt-2 rounded bg-primary px-3 py-1 text-xs text-white disabled:opacity-50"
       >
         {busy ? "Saving…" : "Save timesheet"}
       </button>
@@ -239,8 +239,8 @@ function NonlaborSection({
   }
 
   return (
-    <div className="mt-3 rounded border border-zinc-200 p-3 dark:border-zinc-800">
-      <h4 className="mb-2 text-xs font-semibold uppercase text-zinc-500">
+    <div className="mt-3 rounded border border-brand-border p-3">
+      <h4 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
         Non-labor tracking
       </h4>
       {canDaily && (
@@ -248,7 +248,7 @@ function NonlaborSection({
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="text-left text-zinc-500">
+                <tr className="text-left text-muted-foreground">
                   <th className="py-1 pr-2">Resource</th>
                   {dates.map((d) => (
                     <th key={d} className="px-1 py-1">
@@ -269,7 +269,7 @@ function NonlaborSection({
                             type="number"
                             min={0}
                             step={0.1}
-                            className="w-14 rounded border border-zinc-300 px-1 dark:border-zinc-700 dark:bg-zinc-900"
+                            className="w-14 rounded border border-brand-border px-1"
                             value={values[key] ?? ""}
                             onChange={(e) =>
                               setValues((v) => ({
@@ -290,7 +290,7 @@ function NonlaborSection({
             type="button"
             disabled={busy}
             onClick={() => void submitDaily()}
-            className="mt-2 rounded bg-blue-600 px-3 py-1 text-xs text-white disabled:opacity-50"
+            className="mt-2 rounded bg-primary px-3 py-1 text-xs text-white disabled:opacity-50"
           >
             Save daily non-labor
           </button>
@@ -305,7 +305,7 @@ function NonlaborSection({
                 type="number"
                 step={0.1}
                 placeholder="Running total"
-                className="w-24 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-900"
+                className="w-24 rounded border border-brand-border px-2 py-1"
                 value={totals[r.objectId] ?? ""}
                 onChange={(e) =>
                   setTotals((t) => ({ ...t, [r.objectId]: e.target.value }))
@@ -315,7 +315,7 @@ function NonlaborSection({
                 type="button"
                 disabled={busy}
                 onClick={() => void submitTotal(r.objectId)}
-                className="text-blue-600"
+                className="text-secondary"
               >
                 Set total
               </button>
@@ -401,23 +401,23 @@ export function ActivityCard({
   const edit = (key: string) => policy(policies, key).editable;
 
   return (
-    <article className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+    <article className="rounded-lg border border-brand-border bg-card p-4">
       <header className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {show("activityId") && (
           <div>
-            <span className="text-xs text-zinc-500">Activity ID</span>
+            <span className="text-xs text-muted-foreground">Activity ID</span>
             <p className="text-sm font-medium">{activity.id ?? activity.objectId}</p>
           </div>
         )}
         {show("activityName") && (
           <div className="sm:col-span-2">
-            <span className="text-xs text-zinc-500">Activity Name</span>
+            <span className="text-xs text-muted-foreground">Activity Name</span>
             <p className="text-sm font-medium">{activity.name}</p>
           </div>
         )}
         {show("percentComplete") && (
           <div>
-            <span className="text-xs text-zinc-500">% Complete</span>
+            <span className="text-xs text-muted-foreground">% Complete</span>
             {edit("percentComplete") ? (
               <div className="flex items-center gap-2">
                 <input
@@ -426,7 +426,7 @@ export function ActivityCard({
                   max={100}
                   value={pct}
                   onChange={(e) => setPct(e.target.value)}
-                  className="w-20 rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                  className="w-20 rounded border border-brand-border px-2 py-1 text-sm"
                 />
                 <button
                   type="button"
@@ -434,7 +434,7 @@ export function ActivityCard({
                   onClick={() =>
                     void updateActivity({ PercentComplete: Number(pct) })
                   }
-                  className="text-xs text-blue-600"
+                  className="text-xs text-secondary"
                 >
                   Save
                 </button>
@@ -446,19 +446,19 @@ export function ActivityCard({
         )}
         {show("plannedStart") && (
           <div>
-            <span className="text-xs text-zinc-500">Planned Start</span>
+            <span className="text-xs text-muted-foreground">Planned Start</span>
             <p className="text-sm">{fmtDate(activity.plannedStart)}</p>
           </div>
         )}
         {show("plannedFinish") && (
           <div>
-            <span className="text-xs text-zinc-500">Planned Finish</span>
+            <span className="text-xs text-muted-foreground">Planned Finish</span>
             <p className="text-sm">{fmtDate(activity.plannedFinish)}</p>
           </div>
         )}
       </header>
 
-      <dl className="mt-3 grid gap-3 border-t border-zinc-100 pt-3 sm:grid-cols-3 dark:border-zinc-900">
+      <dl className="mt-3 grid gap-3 border-t border-brand-border/60 pt-3 sm:grid-cols-3">
         {show("actualStart") && (
           <EditableDate
             label="Actual Start"
@@ -487,7 +487,7 @@ export function ActivityCard({
 
       {show("activityStep") && activity.steps.length > 0 && (
         <section className="mt-3">
-          <h4 className="text-xs font-semibold uppercase text-zinc-500">
+          <h4 className="text-xs font-semibold uppercase text-muted-foreground">
             Activity Steps
           </h4>
           <ul className="mt-1 space-y-1">
@@ -507,7 +507,7 @@ export function ActivityCard({
                 )}
                 <span
                   className={
-                    step.IsCompleted ? "text-zinc-400 line-through" : ""
+                    step.IsCompleted ? "text-muted-foreground/70 line-through" : ""
                   }
                 >
                   {step.Name}
@@ -521,13 +521,13 @@ export function ActivityCard({
       {(show("resourceName") || show("budgetedLaborUnits")) &&
         activity.laborResources.length > 0 && (
           <section className="mt-3">
-            <h4 className="text-xs font-semibold uppercase text-zinc-500">
+            <h4 className="text-xs font-semibold uppercase text-muted-foreground">
               Labor Resources
             </h4>
             <div className="mt-1 overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="text-left text-zinc-500">
+                  <tr className="text-left text-muted-foreground">
                     {show("resourceName") && <th className="py-1">Resource</th>}
                     {show("budgetedLaborUnits") && <th>Budgeted</th>}
                     {show("atCompleteLaborUnits") && <th>At Complete</th>}
@@ -559,7 +559,7 @@ export function ActivityCard({
                                   "labor",
                                 )
                               }
-                              className="w-20 rounded border border-zinc-300 px-1 dark:border-zinc-700 dark:bg-zinc-900"
+                              className="w-20 rounded border border-brand-border px-1"
                             />
                           ) : (
                             fmtNum(r.atCompletionUnits)
@@ -580,13 +580,13 @@ export function ActivityCard({
       {(show("resourceName") || show("budgetedNonLaborUnits")) &&
         activity.nonLaborResources.length > 0 && (
           <section className="mt-3">
-            <h4 className="text-xs font-semibold uppercase text-zinc-500">
+            <h4 className="text-xs font-semibold uppercase text-muted-foreground">
               Non-Labor Resources
             </h4>
             <div className="mt-1 overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="text-left text-zinc-500">
+                  <tr className="text-left text-muted-foreground">
                     {show("resourceName") && <th className="py-1">Resource</th>}
                     {show("budgetedNonLaborUnits") && <th>Budgeted</th>}
                     {show("atCompleteNonLaborUnits") && <th>At Complete</th>}
@@ -618,7 +618,7 @@ export function ActivityCard({
                                   "nonlabor",
                                 )
                               }
-                              className="w-20 rounded border border-zinc-300 px-1 dark:border-zinc-700 dark:bg-zinc-900"
+                              className="w-20 rounded border border-brand-border px-1"
                             />
                           ) : (
                             fmtNum(r.atCompletionUnits)
@@ -639,13 +639,13 @@ export function ActivityCard({
       {(show("materialName") || show("budgetedMaterialCost")) &&
         activity.materialResources.length > 0 && (
           <section className="mt-3">
-            <h4 className="text-xs font-semibold uppercase text-zinc-500">
+            <h4 className="text-xs font-semibold uppercase text-muted-foreground">
               Materials
             </h4>
             <div className="mt-1 overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="text-left text-zinc-500">
+                  <tr className="text-left text-muted-foreground">
                     {show("materialName") && <th className="py-1">Material</th>}
                     {show("budgetedMaterialCost") && <th>Budgeted Cost</th>}
                     {show("actualMaterialCost") && <th>Actual Cost</th>}
@@ -674,7 +674,7 @@ export function ActivityCard({
                                   "material",
                                 )
                               }
-                              className="w-24 rounded border border-zinc-300 px-1 dark:border-zinc-700 dark:bg-zinc-900"
+                              className="w-24 rounded border border-brand-border px-1"
                             />
                           ) : (
                             fmtNum(r.actualCost, 0)
@@ -701,15 +701,15 @@ export function ActivityCard({
       />
 
       {show("activityComment") && (
-        <section className="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-900">
-          <h4 className="text-xs font-semibold uppercase text-zinc-500">
+        <section className="mt-3 border-t border-brand-border/60 pt-3">
+          <h4 className="text-xs font-semibold uppercase text-muted-foreground">
             Comments
           </h4>
           {activity.comments.length > 0 && (
-            <ul className="mt-1 space-y-1 text-sm text-zinc-600 dark:text-zinc-400">
+            <ul className="mt-1 space-y-1 text-sm text-muted-foreground">
               {activity.comments.map((c, i) => (
                 <li key={c.ObjectId ?? i}>
-                  <span className="text-xs text-zinc-400">
+                  <span className="text-xs text-muted-foreground/70">
                     {c.CreateUser ?? "User"} · {fmtDate(c.CreateDate)}
                   </span>
                   <p>{c.CommentText}</p>
@@ -723,13 +723,13 @@ export function ActivityCard({
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
                 placeholder="Add a comment…"
-                className="flex-1 rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                className="flex-1 rounded border border-brand-border px-2 py-1 text-sm"
               />
               <button
                 type="button"
                 disabled={busy || !comment.trim()}
                 onClick={() => void addComment()}
-                className="rounded bg-blue-600 px-3 py-1 text-xs text-white disabled:opacity-50"
+                className="rounded bg-primary px-3 py-1 text-xs text-white disabled:opacity-50"
               >
                 Post
               </button>
@@ -739,7 +739,7 @@ export function ActivityCard({
       )}
 
       {error && (
-        <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>
+        <p className="mt-2 text-xs text-red-600">{error}</p>
       )}
     </article>
   );

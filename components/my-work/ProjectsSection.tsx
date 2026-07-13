@@ -44,11 +44,11 @@ export function ProjectsSection() {
   }, []);
 
   return (
-    <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
-      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+    <section className="rounded-lg border border-brand-border bg-card p-4">
+      <h2 className="mb-3 border-l-4 border-secondary pl-2.5 text-xs font-semibold uppercase tracking-wide text-primary">
         Your projects
         {!loading && !error && projects.length > 0 && (
-          <span className="ml-1.5 font-normal text-zinc-400">
+          <span className="ml-1.5 font-normal text-muted-foreground/70">
             ({projects.length})
           </span>
         )}
@@ -59,16 +59,16 @@ export function ProjectsSection() {
           {Array.from({ length: 3 }).map((_, i) => (
             <div
               key={i}
-              className="h-16 animate-pulse rounded-md border border-zinc-100 bg-zinc-50 dark:border-zinc-900 dark:bg-zinc-900"
+              className="h-16 animate-pulse rounded-md border border-brand-border/60 bg-muted"
             />
           ))}
         </div>
       ) : error ? (
-        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
           {error}
         </div>
       ) : projects.length === 0 ? (
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">
+        <p className="text-sm text-muted-foreground">
           Your organization doesn&apos;t have access to any projects yet.
           Contact an Admin to get set up.
         </p>
@@ -77,12 +77,12 @@ export function ProjectsSection() {
           {projects.map((project) => (
             <div
               key={project.ObjectId}
-              className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2.5 dark:border-zinc-800 dark:bg-zinc-900/40"
+              className="rounded-md border border-brand-border bg-muted px-3 py-2.5"
             >
-              <div className="truncate text-sm font-medium text-black dark:text-zinc-50">
+              <div className="truncate text-sm font-medium text-foreground">
                 {project.Name}
               </div>
-              <div className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
+              <div className="mt-0.5 truncate text-xs text-muted-foreground">
                 {project.Id}
                 {project.ParentEPSName ? ` · ${project.ParentEPSName}` : ""}
               </div>

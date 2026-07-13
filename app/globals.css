@@ -1,26 +1,59 @@
 @import "tailwindcss";
 
+/* PM Pro Consulting brand palette (mirrors pm-pro-consulting/app/globals.css).
+   The app always renders the light brand theme regardless of OS preference. */
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #374151;
+  --card: #f0f8ff;
+  --card-foreground: #374151;
+  --primary: #003366;
+  --primary-foreground: #ffffff;
+  --secondary: #4a90e2;
+  --secondary-foreground: #ffffff;
+  --muted: #f0f8ff;
+  --muted-foreground: #6b7280;
+  --accent: #4a90e2;
+  --accent-foreground: #ffffff;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #e5e7eb;
+  --ring: rgba(0, 51, 102, 0.5);
+  --radius: 0.5rem;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-brand-border: var(--border);
+  --color-brand-ring: var(--ring);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  /* Native form controls (radios, date pickers, selects) render light too. */
+  color-scheme: light;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }

@@ -118,7 +118,7 @@ export function OrgLinksPanel({ projects }: { projects: Project[] }) {
 
   return (
     <Panel title="Organization access">
-      <p className="mb-3 text-sm text-zinc-600 dark:text-zinc-400">
+      <p className="mb-3 text-sm text-muted-foreground">
         Link a project to the Clerk organization that owns it. Members of that
         organization will see the project on their dashboard. Each project can
         belong to only one organization.
@@ -171,23 +171,23 @@ export function OrgLinksPanel({ projects }: { projects: Project[] }) {
         <button
           type="submit"
           disabled={busy || !projectId || !orgId}
-          className="h-9 rounded-md bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          className="h-9 rounded-md bg-primary px-4 text-sm font-medium text-white hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
         >
           {busy ? "Linking…" : "Link organization"}
         </button>
         {!loading && organizations.length === 0 && (
-          <p className="text-xs text-amber-600 dark:text-amber-400">
+          <p className="text-xs text-amber-600">
             No Clerk organizations found. Create one in the Clerk dashboard
             first.
           </p>
         )}
       </form>
 
-      <div className="mt-5 border-t border-zinc-200 pt-4 dark:border-zinc-800">
-        <h3 className="mb-2 text-sm font-semibold text-black dark:text-zinc-50">
+      <div className="mt-5 border-t border-brand-border pt-4">
+        <h3 className="mb-2 text-sm font-semibold text-foreground">
           Current links
           {!loading && (
-            <span className="ml-1.5 font-normal text-zinc-400">
+            <span className="ml-1.5 font-normal text-muted-foreground/70">
               ({links.length})
             </span>
           )}
@@ -197,12 +197,12 @@ export function OrgLinksPanel({ projects }: { projects: Project[] }) {
             {Array.from({ length: 2 }).map((_, i) => (
               <div
                 key={i}
-                className="h-11 animate-pulse rounded bg-zinc-100 dark:bg-zinc-900"
+                className="h-11 animate-pulse rounded bg-muted"
               />
             ))}
           </div>
         ) : links.length === 0 ? (
-          <div className="text-sm text-zinc-500">
+          <div className="text-sm text-muted-foreground">
             No projects are linked to an organization yet.
           </div>
         ) : (
@@ -210,14 +210,14 @@ export function OrgLinksPanel({ projects }: { projects: Project[] }) {
             {links.map((l) => (
               <li
                 key={l.projectObjectId}
-                className="flex items-center justify-between gap-3 rounded-md border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950"
+                className="flex items-center justify-between gap-3 rounded-md border border-brand-border bg-white px-3 py-2"
               >
                 <div className="min-w-0 text-sm">
-                  <span className="font-medium text-black dark:text-zinc-50">
+                  <span className="font-medium text-foreground">
                     {projectLabel(l.projectObjectId)}
                   </span>
-                  <span className="text-zinc-400"> → </span>
-                  <span className="text-zinc-700 dark:text-zinc-300">
+                  <span className="text-muted-foreground/70"> → </span>
+                  <span className="text-foreground">
                     {l.clerkOrgName}
                   </span>
                 </div>
@@ -225,7 +225,7 @@ export function OrgLinksPanel({ projects }: { projects: Project[] }) {
                   type="button"
                   onClick={() => void unlink(l)}
                   disabled={busy}
-                  className="shrink-0 text-xs text-red-600 hover:text-red-800 disabled:opacity-50 dark:text-red-400"
+                  className="shrink-0 text-xs text-red-600 hover:text-red-800 disabled:opacity-50"
                 >
                   Unlink
                 </button>

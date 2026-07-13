@@ -1,13 +1,7 @@
 "use client";
 
-import {
-  Show,
-  SignInButton,
-  SignUpButton,
-  UserButton,
-} from "@clerk/nextjs";
-import Link from "next/link";
 import { useEffect, useState } from "react";
+import { AppFooter, AppHeader, PageHeader } from "@/components/AppShell";
 import { OrgLinksPanel } from "./org-links-panel";
 import {
   apiCall,
@@ -78,51 +72,17 @@ export default function AdminPage() {
   const selectedProject = projects.find((p) => p.ObjectId === selectedProjectId);
 
   return (
-    <div className="min-h-screen bg-zinc-50 py-8 px-4 dark:bg-black">
-      <nav className="mx-auto mb-6 flex max-w-4xl items-center justify-between gap-3">
-        <div className="flex items-center gap-4">
-          <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            PMPro BI
-          </span>
-          <Link
-            href="/"
-            className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
-          >
-            ← Projects
-          </Link>
-        </div>
-        <div className="flex items-center gap-2">
-          <Show when="signed-out">
-            <SignInButton mode="modal">
-              <button className="h-9 rounded-md border border-zinc-300 px-3 text-sm font-medium text-zinc-800 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-900">
-                Sign in
-              </button>
-            </SignInButton>
-            <SignUpButton mode="modal">
-              <button className="h-9 rounded-md bg-zinc-800 px-3 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-200 dark:text-black">
-                Sign up
-              </button>
-            </SignUpButton>
-          </Show>
-          <Show when="signed-in">
-            <UserButton />
-          </Show>
-        </div>
-      </nav>
+    <div className="flex min-h-screen flex-col bg-background">
+      <AppHeader />
 
-      <main className="mx-auto max-w-4xl space-y-6">
-        <header>
-          <h1 className="text-2xl font-semibold tracking-tight text-black dark:text-zinc-50">
-            Admin
-          </h1>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            Create projects under a business (EPS), then manage activities and
-            owner assignments within a project.
-          </p>
-        </header>
+      <PageHeader
+        title="Admin"
+        subtitle="Create projects, link client organizations, and manage access."
+      />
 
+      <main className="mx-auto w-full max-w-4xl flex-1 space-y-6 px-4 py-8 sm:px-6">
         {loadError && (
-          <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+          <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
             {loadError}
           </div>
         )}
@@ -132,13 +92,13 @@ export default function AdminPage() {
         <OrgLinksPanel projects={projects} />
 
         <Panel title="Manage a project">
-          <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+          <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Project
           </label>
           <select
             value={selectedProjectId}
             onChange={(e) => setSelectedProjectId(e.target.value)}
-            className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-black dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+            className="w-full rounded-md border border-brand-border bg-white px-3 py-2 text-sm text-foreground"
           >
             <option value="">Select a project…</option>
             {projects.map((p) => (
@@ -160,6 +120,8 @@ export default function AdminPage() {
         <PolicyManager eps={eps} />
         <AuditPanel />
       </main>
+
+      <AppFooter />
     </div>
   );
 }
@@ -249,7 +211,7 @@ function CreateProjectForm({
               </option>
             ))}
           </select>
-          <span className="mt-1 block text-xs font-normal normal-case text-zinc-400">
+          <span className="mt-1 block text-xs font-normal normal-case text-muted-foreground/70">
             Where the project lives in P6 (its EPS folder). A default is
             pre-selected — leave it unless you need a specific one.
           </span>
@@ -269,7 +231,7 @@ function CreateProjectForm({
         <button
           type="submit"
           disabled={submitting || !name.trim() || !id.trim() || !effectiveEpsId}
-          className="h-10 rounded-md bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          className="h-10 rounded-md bg-primary px-4 text-sm font-medium text-white hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
         >
           {submitting ? "Creating…" : "Create project"}
         </button>
@@ -319,7 +281,7 @@ function ProjectManager({
   }, [project.ObjectId]);
 
   return (
-    <div className="mt-5 space-y-5 border-t border-zinc-200 pt-5 dark:border-zinc-800">
+    <div className="mt-5 space-y-5 border-t border-brand-border pt-5">
       {ENABLE_ACTIVITY_CREATION && (
         <CreateActivityForm
           projectObjectId={project.ObjectId}
@@ -329,10 +291,10 @@ function ProjectManager({
       )}
 
       <div>
-        <h3 className="mb-2 text-sm font-semibold text-black dark:text-zinc-50">
+        <h3 className="mb-2 text-sm font-semibold text-foreground">
           Activities
           {!loading && (
-            <span className="ml-1.5 font-normal text-zinc-400">
+            <span className="ml-1.5 font-normal text-muted-foreground/70">
               ({activities.length})
             </span>
           )}
@@ -343,12 +305,12 @@ function ProjectManager({
             {Array.from({ length: 4 }).map((_, i) => (
               <div
                 key={i}
-                className="h-12 animate-pulse rounded bg-zinc-100 dark:bg-zinc-900"
+                className="h-12 animate-pulse rounded bg-muted"
               />
             ))}
           </div>
         ) : activities.length === 0 ? (
-          <div className="text-sm text-zinc-500">No activities yet.</div>
+          <div className="text-sm text-muted-foreground">No activities yet.</div>
         ) : (
           <ul className="space-y-2">
             {activities.map((activity) => (
@@ -412,9 +374,9 @@ function CreateActivityForm({
   return (
     <form
       onSubmit={onSubmit}
-      className="space-y-3 rounded-md border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900/40"
+      className="space-y-3 rounded-md border border-brand-border bg-muted p-3"
     >
-      <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         New activity
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -467,12 +429,12 @@ function CreateActivityForm({
       <button
         type="submit"
         disabled={submitting || !name.trim() || !wbsId}
-        className="h-9 rounded-md bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+        className="h-9 rounded-md bg-primary px-4 text-sm font-medium text-white hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
       >
         {submitting ? "Creating…" : "Add activity"}
       </button>
       {wbs.length === 0 && (
-        <p className="text-xs text-amber-600 dark:text-amber-400">
+        <p className="text-xs text-amber-600">
           This project has no WBS nodes, so activities can&apos;t be created
           until one exists.
         </p>
@@ -548,13 +510,13 @@ function ActivityRow({
     "—";
 
   return (
-    <li className="rounded-md border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
+    <li className="rounded-md border border-brand-border bg-card p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="truncate text-sm font-medium text-black dark:text-zinc-50">
+          <div className="truncate text-sm font-medium text-foreground">
             {activity.Name}
           </div>
-          <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+          <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
             <span>#{activity.ObjectId}</span>
             {activity.Status && <span>{activity.Status}</span>}
             <span>Owner: {ownerLabel}</span>
@@ -565,7 +527,7 @@ function ActivityRow({
             type="button"
             onClick={() => setEditing((v) => !v)}
             disabled={busy}
-            className="text-xs text-zinc-600 hover:text-zinc-900 disabled:opacity-50 dark:text-zinc-300 dark:hover:text-zinc-100"
+            className="text-xs text-muted-foreground hover:text-primary disabled:opacity-50"
           >
             {editing ? "Cancel" : "Edit"}
           </button>
@@ -573,7 +535,7 @@ function ActivityRow({
             type="button"
             onClick={() => void remove()}
             disabled={busy}
-            className="text-xs text-red-600 hover:text-red-800 disabled:opacity-50 dark:text-red-400"
+            className="text-xs text-red-600 hover:text-red-800 disabled:opacity-50"
           >
             Delete
           </button>
@@ -581,7 +543,7 @@ function ActivityRow({
       </div>
 
       {editing && (
-        <div className="mt-3 space-y-3 border-t border-zinc-100 pt-3 dark:border-zinc-900">
+        <div className="mt-3 space-y-3 border-t border-brand-border/60 pt-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Name">
               <input
@@ -646,7 +608,7 @@ function ActivityRow({
             type="button"
             onClick={() => void save()}
             disabled={busy}
-            className="h-9 rounded-md bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            className="h-9 rounded-md bg-primary px-4 text-sm font-medium text-white hover:bg-secondary disabled:opacity-50"
           >
             {busy ? "Saving…" : "Save changes"}
           </button>
@@ -752,7 +714,7 @@ function PolicyManager({ eps }: { eps: Eps[] }) {
 
   return (
     <Panel title="Field & company access">
-      <p className="mb-3 text-sm text-zinc-600 dark:text-zinc-400">
+      <p className="mb-3 text-sm text-muted-foreground">
         Configure which fields are visible/editable and which client companies
         (2nd-level EPS) a Clerk org or user can access. Leave company access
         empty to allow all Production projects.
@@ -780,7 +742,7 @@ function PolicyManager({ eps }: { eps: Eps[] }) {
           <button
             type="button"
             onClick={() => void loadPolicies()}
-            className="h-10 rounded-md border border-zinc-300 px-4 text-sm dark:border-zinc-700"
+            className="h-10 rounded-md border border-brand-border px-4 text-sm"
           >
             Load
           </button>
@@ -794,7 +756,7 @@ function PolicyManager({ eps }: { eps: Eps[] }) {
         <div className="mb-6 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-xs text-zinc-500">
+              <tr className="text-left text-xs text-muted-foreground">
                 <th className="py-2">Field</th>
                 <th>Visible</th>
                 <th>Editable</th>
@@ -816,13 +778,13 @@ function PolicyManager({ eps }: { eps: Eps[] }) {
         </div>
       )}
 
-      <div className="border-t border-zinc-200 pt-4 dark:border-zinc-800">
+      <div className="border-t border-brand-border pt-4">
         <h3 className="mb-2 text-sm font-semibold">Allowed companies (EPS)</h3>
         <div className="flex flex-wrap gap-2">
           <select
             value={selectedEps}
             onChange={(e) => setSelectedEps(e.target.value)}
-            className="rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            className="rounded border border-brand-border px-2 py-1 text-sm"
           >
             <option value="">Select client EPS…</option>
             {eps.map((e) => (
@@ -835,7 +797,7 @@ function PolicyManager({ eps }: { eps: Eps[] }) {
             type="button"
             onClick={() => void addCompany()}
             disabled={!selectedEps}
-            className="rounded bg-blue-600 px-3 py-1 text-sm text-white disabled:opacity-50"
+            className="rounded bg-primary px-3 py-1 text-sm text-white disabled:opacity-50"
           >
             Add
           </button>
@@ -874,7 +836,7 @@ function PolicyRow({
   const [editable, setEditable] = useState(rule.editable);
 
   return (
-    <tr className="border-t border-zinc-100 dark:border-zinc-900">
+    <tr className="border-t border-brand-border/60">
       <td className="py-2 font-mono text-xs">{rule.fieldKey}</td>
       <td>
         <input
@@ -894,7 +856,7 @@ function PolicyRow({
         <button
           type="button"
           onClick={() => onSave(visible, editable)}
-          className="text-xs text-blue-600"
+          className="text-xs text-secondary"
         >
           Save
         </button>
@@ -931,7 +893,7 @@ function AuditPanel() {
         type="button"
         onClick={() => void load()}
         disabled={loading}
-        className="mb-3 rounded border border-zinc-300 px-3 py-1 text-sm dark:border-zinc-700"
+        className="mb-3 rounded border border-brand-border px-3 py-1 text-sm"
       >
         {loading ? "Loading…" : "Load my audit log"}
       </button>
@@ -941,9 +903,9 @@ function AuditPanel() {
           {logs.map((log, i) => (
             <li
               key={i}
-              className="rounded border border-zinc-100 px-2 py-1 dark:border-zinc-900"
+              className="rounded border border-brand-border/60 px-2 py-1"
             >
-              <span className="text-zinc-400">
+              <span className="text-muted-foreground/70">
                 {new Date(log.createdAt).toLocaleString()}
               </span>{" "}
               <strong>{log.action}</strong> {log.entityType}

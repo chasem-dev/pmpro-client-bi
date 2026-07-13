@@ -1,21 +1,12 @@
 "use client";
 
-import {
-  Show,
-  SignInButton,
-  SignUpButton,
-  UserButton,
-  useUser,
-} from "@clerk/nextjs";
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AppFooter, AppHeader, PageHeader } from "@/components/AppShell";
 import { ActivityCard } from "@/components/my-work/ActivityCard";
 import { ProjectsSection } from "@/components/my-work/ProjectsSection";
 import type { MyActivitiesResponse, MyActivity } from "@/components/my-work/types";
-import { isAdminUser } from "@/lib/admin";
 
 export default function Home() {
-  const { user } = useUser();
   const [activities, setActivities] = useState<MyActivity[]>([]);
   const [policies, setPolicies] = useState<MyActivitiesResponse["policies"]>();
   const [loading, setLoading] = useState(true);
@@ -69,63 +60,27 @@ export default function Home() {
   }, [activities]);
 
   return (
-    <div className="min-h-screen bg-zinc-50 py-8 px-4 dark:bg-black">
-      <nav className="mx-auto mb-6 flex max-w-6xl items-center justify-between gap-3">
-        <div className="flex items-center gap-4">
-          <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            PMPro Update Tool
-          </span>
-          {isAdminUser(user?.id) && (
-            <Link
-              href="/admin"
-              className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
-            >
-              Admin
-            </Link>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <Show when="signed-out">
-            <SignInButton mode="modal">
-              <button className="h-9 rounded-md border border-zinc-300 px-3 text-sm font-medium text-zinc-800 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-900">
-                Sign in
-              </button>
-            </SignInButton>
-            <SignUpButton mode="modal">
-              <button className="h-9 rounded-md bg-zinc-800 px-3 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-200 dark:text-black">
-                Sign up
-              </button>
-            </SignUpButton>
-          </Show>
-          <Show when="signed-in">
-            <UserButton />
-          </Show>
-        </div>
-      </nav>
+    <div className="flex min-h-screen flex-col bg-background">
+      <AppHeader />
 
-      <main className="mx-auto max-w-6xl space-y-6">
-        <header className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-black dark:text-zinc-50">
-              My Work
-            </h1>
-            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-              Activities assigned to you via the P6 Owner Email field.
-            </p>
-          </div>
-          <button
-            onClick={() => void load()}
-            disabled={loading}
-            className="h-9 shrink-0 rounded-md border border-zinc-300 px-3 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-900"
-          >
-            {loading ? "Refreshing…" : "Refresh"}
-          </button>
-        </header>
+      <PageHeader
+        title="My Work"
+        subtitle="Activities assigned to you via the P6 Owner Email field."
+      >
+        <button
+          onClick={() => void load()}
+          disabled={loading}
+          className="h-9 shrink-0 rounded-md border border-white/40 bg-white/10 px-4 text-sm font-medium text-white transition-colors hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {loading ? "Refreshing…" : "Refresh"}
+        </button>
+      </PageHeader>
 
+      <main className="mx-auto w-full max-w-6xl flex-1 space-y-6 px-4 py-8 sm:px-6">
         <ProjectsSection />
 
-        <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
-          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+        <section className="rounded-lg border border-brand-border bg-card p-4">
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Time period
           </h2>
           <div className="flex flex-wrap items-end gap-4">
@@ -142,7 +97,7 @@ export default function Home() {
                 value={days}
                 disabled={useRange}
                 onChange={(e) => setDays(e.target.value)}
-                className="w-20 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-900"
+                className="w-20 rounded border border-brand-border px-2 py-1"
               />
             </label>
             <label className="flex items-center gap-2 text-sm">
@@ -159,21 +114,21 @@ export default function Home() {
                   type="date"
                   value={from}
                   onChange={(e) => setFrom(e.target.value)}
-                  className="rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                  className="rounded border border-brand-border px-2 py-1 text-sm"
                 />
-                <span className="text-sm text-zinc-400">to</span>
+                <span className="text-sm text-muted-foreground/70">to</span>
                 <input
                   type="date"
                   value={to}
                   onChange={(e) => setTo(e.target.value)}
-                  className="rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                  className="rounded border border-brand-border px-2 py-1 text-sm"
                 />
               </>
             )}
             <button
               type="button"
               onClick={() => void load()}
-              className="rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700"
+              className="rounded bg-primary px-3 py-1.5 text-sm text-white hover:bg-secondary"
             >
               Apply filter
             </button>
@@ -181,7 +136,7 @@ export default function Home() {
         </section>
 
         {error && (
-          <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+          <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
             {error}
           </div>
         )}
@@ -191,19 +146,19 @@ export default function Home() {
             {Array.from({ length: 4 }).map((_, i) => (
               <div
                 key={i}
-                className="h-32 animate-pulse rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950"
+                className="h-32 animate-pulse rounded-lg border border-brand-border bg-white"
               />
             ))}
           </div>
         ) : activities.length === 0 && !error ? (
-          <div className="rounded-lg border border-zinc-200 bg-white p-10 text-center dark:border-zinc-800 dark:bg-zinc-950">
-            <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-zinc-100 text-xl dark:bg-zinc-900">
+          <div className="rounded-lg border border-brand-border bg-card p-10 text-center">
+            <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-muted text-xl">
               📁
             </div>
-            <h2 className="mt-4 text-base font-semibold text-black dark:text-zinc-50">
+            <h2 className="mt-4 text-base font-semibold text-foreground">
               No activities found
             </h2>
-            <p className="mx-auto mt-1 max-w-sm text-sm text-zinc-500 dark:text-zinc-400">
+            <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
               No activities are assigned to you in the selected time period. If
               you believe this is a mistake, contact an Admin.
             </p>
@@ -212,9 +167,9 @@ export default function Home() {
           <div className="space-y-8">
             {grouped.map(([projectName, projectActivities]) => (
               <section key={projectName}>
-                <h2 className="mb-3 text-lg font-semibold text-black dark:text-zinc-50">
+                <h2 className="mb-3 border-l-4 border-secondary pl-3 text-lg font-semibold text-primary">
                   {projectName}
-                  <span className="ml-2 text-sm font-normal text-zinc-400">
+                  <span className="ml-2 text-sm font-normal text-muted-foreground/70">
                     ({projectActivities.length})
                   </span>
                 </h2>
@@ -233,6 +188,8 @@ export default function Home() {
           </div>
         )}
       </main>
+
+      <AppFooter />
     </div>
   );
 }

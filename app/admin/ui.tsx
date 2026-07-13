@@ -23,7 +23,7 @@ export const jsonInit = (method: string, body: unknown): RequestInit => ({
 });
 
 export const inputClass =
-  "w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-black outline-none ring-blue-500 focus:ring-2 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50";
+  "w-full rounded-md border border-brand-border bg-white px-3 py-2 text-sm text-foreground outline-none ring-brand-ring focus:ring-2";
 
 export function Field({
   label,
@@ -34,7 +34,7 @@ export function Field({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+      <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </span>
       {children}
@@ -51,8 +51,8 @@ export function FormMessage({
 }) {
   const classes =
     tone === "error"
-      ? "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
-      : "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200";
+      ? "border-red-200 bg-red-50 text-red-800"
+      : "border-emerald-200 bg-emerald-50 text-emerald-800";
   return (
     <div className={`rounded-md border px-3 py-2 text-sm ${classes}`}>
       {children}
@@ -68,8 +68,8 @@ export function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
+    <section className="rounded-lg border border-brand-border bg-card p-4 shadow-sm">
+      <h2 className="mb-3 border-l-4 border-secondary pl-2.5 text-sm font-semibold uppercase tracking-wide text-primary">
         {title}
       </h2>
       {children}
