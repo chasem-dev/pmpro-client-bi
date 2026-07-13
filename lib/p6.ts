@@ -151,6 +151,8 @@ export interface P6Project {
   Id: string;
   Name: string;
   ParentEPSObjectId?: string;
+  ParentEPSId?: string;
+  ParentEPSName?: string;
 }
 
 export interface P6Eps {
@@ -249,12 +251,46 @@ export interface P6ResourceAssignment {
 export const ACTIVITY_FIELDS =
   "Id,Name,ObjectId,ProjectObjectId,ProjectName,Status,PercentComplete,PlannedLaborUnits,PlannedLaborCost,ActualLaborUnits,ActualLaborCost,PlannedNonLaborUnits,ActualNonLaborUnits,AtCompletionLaborUnits,AtCompletionNonLaborUnits,PlannedStartDate,PlannedFinishDate,ActualStartDate,ActualFinishDate,ExpectedFinishDate,TotalFloat,FreeFloat";
 
-export async function getProjects(): Promise<P6Project[]> {
-  return p6Read<P6Project>("project", "Name,ObjectId,Id,ParentEPSObjectId");
+// This app only exposes the "Production" EPS branch under PM Pro Consulting.
+// Everything else in P6 (Sand Box, Templates, Waiting For Review, …) is
+// invisible to both the dashboard and the admin tools.
+const PRODUCTION_EPS_ID = "PROD";
+
+async function getAllEps(): Promise<P6Eps[]> {
+  return p6Read<P6Eps>("eps", "Name,ObjectId,Id,ParentObjectId");
 }
 
+/** The Production EPS node and all of its descendants. */
 export async function getEps(): Promise<P6Eps[]> {
-  return p6Read<P6Eps>("eps", "Name,ObjectId,Id,ParentObjectId");
+  const all = await getAllEps();
+  const root = all.find((node) => node.Id === PRODUCTION_EPS_ID);
+  if (!root) {
+    throw new P6Error(
+      `Production EPS (Id "${PRODUCTION_EPS_ID}") not found in P6.`,
+      500,
+    );
+  }
+  const subtree: P6Eps[] = [];
+  const queue = [root];
+  while (queue.length > 0) {
+    const node = queue.shift()!;
+    subtree.push(node);
+    queue.push(...all.filter((n) => n.ParentObjectId === node.ObjectId));
+  }
+  return subtree;
+}
+
+export async function getProjects(): Promise<P6Project[]> {
+  const productionEps = await getEps();
+  // P6 filters accept SQL-style clauses; restrict to the Production branch.
+  const epsIds = productionEps
+    .map((node) => Number(node.ObjectId))
+    .filter(Number.isInteger);
+  return p6Read<P6Project>(
+    "project",
+    "Name,ObjectId,Id,ParentEPSObjectId,ParentEPSId,ParentEPSName",
+    `ParentEPSObjectId IN (${epsIds.join(", ")})`,
+  );
 }
 
 export async function getUsers(): Promise<P6User[]> {

@@ -188,8 +188,17 @@ export default function Home() {
             ))}
           </div>
         ) : activities.length === 0 && !error ? (
-          <div className="rounded-lg border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950">
-            No activities found for your account in the selected time period.
+          <div className="rounded-lg border border-zinc-200 bg-white p-10 text-center dark:border-zinc-800 dark:bg-zinc-950">
+            <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-zinc-100 text-xl dark:bg-zinc-900">
+              📁
+            </div>
+            <h2 className="mt-4 text-base font-semibold text-black dark:text-zinc-50">
+              No activities found
+            </h2>
+            <p className="mx-auto mt-1 max-w-sm text-sm text-zinc-500 dark:text-zinc-400">
+              No activities are assigned to you in the selected time period. If
+              you believe this is a mistake, contact an Admin.
+            </p>
           </div>
         ) : (
           <div className="space-y-8">
