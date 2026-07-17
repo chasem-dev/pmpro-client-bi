@@ -1,6 +1,11 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { createActivity, getProjectActivities, P6Error } from "@/lib/p6";
+import {
+  createActivity,
+  getOwnerEmailsForActivities,
+  getProjectActivities,
+  P6Error,
+} from "@/lib/p6";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +35,14 @@ export async function GET(
 
   try {
     const activities = await getProjectActivities(objectId);
-    return NextResponse.json({ activities });
+    const ownerEmails = await getOwnerEmailsForActivities(
+      activities.map((a) => Number(a.ObjectId)),
+    );
+    const withOwners = activities.map((a) => ({
+      ...a,
+      OwnerEmail: ownerEmails.get(Number(a.ObjectId)),
+    }));
+    return NextResponse.json({ activities: withOwners });
   } catch (err) {
     return p6ErrorResponse(err);
   }

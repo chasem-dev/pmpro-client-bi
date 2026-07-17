@@ -25,6 +25,7 @@ type Activity = {
   Status?: string;
   ActivityOwnerUserId?: number;
   OwnerNamesArray?: string[];
+  OwnerEmail?: string;
   PrimaryResourceName?: string;
   PlannedLaborUnits?: number | string;
   PlannedLaborCost?: number | string;
@@ -504,6 +505,7 @@ function ActivityRow({
   }
 
   const ownerLabel =
+    activity.OwnerEmail ||
     activity.OwnerNamesArray?.join(", ") ||
     users.find((u) => String(u.ObjectId) === String(activity.ActivityOwnerUserId))
       ?.Name ||

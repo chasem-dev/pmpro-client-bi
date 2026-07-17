@@ -11,6 +11,11 @@ function getP6Authtoken(): string {
 const OWNER_EMAIL_UDF_TITLE =
   process.env.P6_OWNER_EMAIL_UDF_TITLE ?? "Owner Email";
 
+// Known ObjectId of the "Owner Email" Activity UDF type in our P6 instance.
+// Hardcoded to skip a udfType lookup on every cold start; if the UDF is ever
+// recreated in P6, update this or fall back to getOwnerEmailUdfTypeObjectId().
+const OWNER_EMAIL_UDF_TYPE_OBJECT_ID = 138;
+
 const SESSION_TTL_MS = 10 * 60 * 1000;
 
 let sessionCookie: string | null = null;
@@ -31,6 +36,14 @@ function authHeaders(): Record<string, string> {
 
 function escapeP6FilterValue(value: string): string {
   return value.replace(/'/g, "''");
+}
+
+// P6 filter syntax notes (verified against the live API):
+// - :and:/:or: MUST be surrounded by spaces. Without spaces P6 silently
+//   ignores everything after the first condition instead of erroring.
+// - "Field IN (1, 2)" is supported and is the preferred way to match id sets.
+function inFilter(field: string, ids: number[]): string {
+  return `${field} IN (${ids.join(", ")})`;
 }
 
 async function login(): Promise<string> {
@@ -381,8 +394,11 @@ export async function getActivitiesByIds(ids: number[]): Promise<P6Activity[]> {
   }
   const results: P6Activity[] = [];
   for (const chunk of chunks) {
-    const filter = chunk.map((id) => `ObjectId:eq:'${id}'`).join(":or:");
-    const batch = await p6Read<P6Activity>("activity", ACTIVITY_FIELDS, filter);
+    const batch = await p6Read<P6Activity>(
+      "activity",
+      ACTIVITY_FIELDS,
+      inFilter("ObjectId", chunk),
+    );
     results.push(...batch);
   }
   return results;
@@ -405,6 +421,12 @@ export async function findActivitiesForUser(userId: number): Promise<P6Activity[
   );
 }
 
+/**
+ * Resolves the Owner Email UDF type ObjectId by title. Currently unused —
+ * findActivityIdsByOwnerEmail uses the hardcoded
+ * OWNER_EMAIL_UDF_TYPE_OBJECT_ID — but kept as a fallback in case the UDF
+ * type is recreated with a different ObjectId.
+ */
 export async function getOwnerEmailUdfTypeObjectId(): Promise<number> {
   if (ownerEmailUdfTypeId) return ownerEmailUdfTypeId;
   if (ownerEmailUdfTypeLookup) return ownerEmailUdfTypeLookup;
@@ -446,13 +468,32 @@ export async function getOwnerEmailUdfTypeObjectId(): Promise<number> {
 export async function findActivityIdsByOwnerEmail(
   email: string,
 ): Promise<number[]> {
-  const udfTypeId = await getOwnerEmailUdfTypeObjectId();
+  const udfTypeId = OWNER_EMAIL_UDF_TYPE_OBJECT_ID;
   const values = await p6Read<P6UdfValue>(
     "udfValue",
     "ForeignObjectId,Text,UDFTypeObjectId",
-    `UDFTypeObjectId:eq:'${udfTypeId}':and:Text:eq:'${escapeP6FilterValue(email.toLowerCase())}'`,
+    `UDFTypeObjectId:eq:'${udfTypeId}' :and: Text:eq:'${escapeP6FilterValue(email.toLowerCase())}'`,
   );
-  return values.map((v) => v.ForeignObjectId);
+  return values.map((v) => Number(v.ForeignObjectId));
+}
+
+/** Owner Email UDF values keyed by activity ObjectId. */
+export async function getOwnerEmailsForActivities(
+  activityObjectIds: number[],
+): Promise<Map<number, string>> {
+  const emails = new Map<number, string>();
+  for (let i = 0; i < activityObjectIds.length; i += 50) {
+    const chunk = activityObjectIds.slice(i, i + 50);
+    const values = await p6Read<P6UdfValue>(
+      "udfValue",
+      "ForeignObjectId,Text,UDFTypeObjectId",
+      `${inFilter("ForeignObjectId", chunk)} :and: UDFTypeObjectId:eq:'${OWNER_EMAIL_UDF_TYPE_OBJECT_ID}'`,
+    );
+    for (const v of values) {
+      if (v.Text) emails.set(Number(v.ForeignObjectId), v.Text);
+    }
+  }
+  return emails;
 }
 
 export async function getActivitySteps(
@@ -465,13 +506,10 @@ export async function getActivitySteps(
   }
   const results: P6ActivityStep[] = [];
   for (const chunk of chunks) {
-    const filter = chunk
-      .map((id) => `ActivityObjectId:eq:'${id}'`)
-      .join(":or:");
     const batch = await p6Read<P6ActivityStep>(
       "activityStep",
       "ObjectId,ActivityObjectId,Name,IsCompleted,PercentComplete,SequenceNumber",
-      filter,
+      inFilter("ActivityObjectId", chunk),
     );
     results.push(...batch);
   }
@@ -490,13 +528,10 @@ export async function getActivityComments(
   }
   const results: P6ActivityComment[] = [];
   for (const chunk of chunks) {
-    const filter = chunk
-      .map((id) => `ActivityObjectId:eq:'${id}'`)
-      .join(":or:");
     const batch = await p6Read<P6ActivityComment>(
       "activityComment",
       "ObjectId,ActivityObjectId,CommentText,CreateDate,CreateUser,UserObjectId",
-      filter,
+      inFilter("ActivityObjectId", chunk),
     );
     results.push(...batch);
   }
@@ -517,13 +552,10 @@ export async function getResourceAssignments(
   }
   const results: P6ResourceAssignment[] = [];
   for (const chunk of chunks) {
-    const filter = chunk
-      .map((id) => `ActivityObjectId:eq:'${id}'`)
-      .join(":or:");
     const batch = await p6Read<P6ResourceAssignment>(
       "resourceAssignment",
       "ObjectId,ActivityObjectId,ResourceObjectId,ResourceName,ResourceType,PlannedUnits,ActualUnits,AtCompletionUnits,PlannedCost,ActualCost,RemainingUnits",
-      filter,
+      inFilter("ActivityObjectId", chunk),
     );
     results.push(...batch);
   }

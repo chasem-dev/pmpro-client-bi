@@ -2,12 +2,14 @@ import type { AppUser } from "@/lib/auth";
 import { filterProjectsInProd } from "@/lib/eps";
 import { canView, type FieldKey, type FieldPolicyRule } from "@/lib/fields";
 import { getAllowedCompanyEpsIds, loadFieldPoliciesForUser } from "@/lib/policy";
+import { getProjectObjectIdsForOrg } from "@/lib/project-org-links";
 import {
   findActivityIdsByOwnerEmail,
   getActivitiesByIds,
   getActivityComments,
   getActivitySteps,
   getEps,
+  getProjectActivities,
   getProjects,
   getResourceAssignments,
   type P6Activity,
@@ -155,21 +157,12 @@ export async function fetchMyActivities(
   user: AppUser,
   opts?: { days?: number; from?: string; to?: string },
 ): Promise<MyActivitiesResult> {
-  const [policies, allowedCompanies, epsList, projects, activityIds] =
-    await Promise.all([
-      loadFieldPoliciesForUser(user),
-      getAllowedCompanyEpsIds(user),
-      getEps(),
-      getProjects(),
-      findActivityIdsByOwnerEmail(user.email),
-    ]);
-
-  if (activityIds.length === 0) {
-    return {
-      activities: [],
-      policies: policiesToRecord(policies),
-    };
-  }
+  const [policies, allowedCompanies, epsList, projects] = await Promise.all([
+    loadFieldPoliciesForUser(user),
+    getAllowedCompanyEpsIds(user),
+    getEps(),
+    getProjects(),
+  ]);
 
   const prodProjects = filterProjectsInProd(projects, epsList);
   const projectById = new Map(prodProjects.map((p) => [p.ObjectId, p]));
@@ -184,7 +177,30 @@ export async function fetchMyActivities(
       .map((p) => p.ObjectId),
   );
 
-  const activities = await getActivitiesByIds(activityIds);
+  // Project admins (org:admin) see every activity in the projects linked to
+  // their organization; everyone else only sees activities assigned to them
+  // via the Owner Email UDF.
+  let activities: P6Activity[];
+  if (user.isProjectAdmin && user.orgId) {
+    const orgProjectIds = await getProjectObjectIdsForOrg(user.orgId);
+    const adminProjectIds = orgProjectIds.filter((id) =>
+      allowedProjectIds.has(id),
+    );
+    const perProject = await Promise.all(
+      adminProjectIds.map((id) => getProjectActivities(id)),
+    );
+    activities = perProject.flat();
+  } else {
+    const activityIds = await findActivityIdsByOwnerEmail(user.email);
+    if (activityIds.length === 0) {
+      return {
+        activities: [],
+        policies: policiesToRecord(policies),
+      };
+    }
+    activities = await getActivitiesByIds(activityIds);
+  }
+
   const filtered = activities.filter((a) => {
     const projectId = a.ProjectObjectId ? String(a.ProjectObjectId) : null;
     if (!projectId || !allowedProjectIds.has(projectId)) return false;

@@ -4,10 +4,12 @@ export interface AppUser {
   userId: string;
   email: string;
   orgId: string | null;
+  /** True when the user holds org:admin in their active Clerk organization. */
+  isProjectAdmin: boolean;
 }
 
 export async function requireAppUser(): Promise<AppUser> {
-  const { userId, orgId } = await auth();
+  const { userId, orgId, has } = await auth();
   if (!userId) {
     throw new AuthError("Unauthorized", 401);
   }
@@ -25,6 +27,7 @@ export async function requireAppUser(): Promise<AppUser> {
     userId,
     email: email.toLowerCase(),
     orgId: orgId ?? null,
+    isProjectAdmin: orgId ? has({ role: "org:admin" }) : false,
   };
 }
 

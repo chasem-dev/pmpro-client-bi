@@ -337,6 +337,7 @@ export function ActivityCard({
   policies?: FieldPolicies;
   onRefresh: () => void;
 }) {
+  const [open, setOpen] = useState(false);
   const [comment, setComment] = useState("");
   const [pct, setPct] = useState(
     activity.percentComplete != null ? String(activity.percentComplete) : "",
@@ -401,20 +402,52 @@ export function ActivityCard({
   const edit = (key: string) => policy(policies, key).editable;
 
   return (
-    <article className="rounded-lg border border-brand-border bg-card p-4">
+    <article className="rounded-lg border border-brand-border bg-card">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-3 rounded-lg px-4 py-3 text-left transition-colors hover:bg-muted/50"
+      >
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-foreground">
+            {show("activityName")
+              ? activity.name
+              : (activity.id ?? activity.objectId)}
+          </p>
+          {show("activityId") && show("activityName") && activity.id && (
+            <p className="text-xs text-muted-foreground">{activity.id}</p>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-3">
+          {show("plannedStart") && (
+            <div className="text-right">
+              <span className="block text-xs text-muted-foreground">
+                Planned Start
+              </span>
+              <span className="text-sm">{fmtDate(activity.plannedStart)}</span>
+            </div>
+          )}
+          <svg
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            aria-hidden="true"
+            className={`h-4 w-4 text-muted-foreground transition-transform ${
+              open ? "rotate-180" : ""
+            }`}
+          >
+            <path
+              fillRule="evenodd"
+              d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+              clipRule="evenodd"
+            />
+          </svg>
+        </div>
+      </button>
+
+      {open && (
+        <div className="border-t border-brand-border/60 p-4">
       <header className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {show("activityId") && (
-          <div>
-            <span className="text-xs text-muted-foreground">Activity ID</span>
-            <p className="text-sm font-medium">{activity.id ?? activity.objectId}</p>
-          </div>
-        )}
-        {show("activityName") && (
-          <div className="sm:col-span-2">
-            <span className="text-xs text-muted-foreground">Activity Name</span>
-            <p className="text-sm font-medium">{activity.name}</p>
-          </div>
-        )}
         {show("percentComplete") && (
           <div>
             <span className="text-xs text-muted-foreground">% Complete</span>
@@ -740,6 +773,8 @@ export function ActivityCard({
 
       {error && (
         <p className="mt-2 text-xs text-red-600">{error}</p>
+      )}
+        </div>
       )}
     </article>
   );
