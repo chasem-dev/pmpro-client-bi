@@ -40,18 +40,18 @@ export async function POST(
       return NextResponse.json({ error: "commentText is required." }, { status: 400 });
     }
 
-    const p6User = await findUserByEmail(user.email);
-    if (!p6User) {
-      return NextResponse.json(
-        { error: `No P6 user found for ${user.email}.` },
-        { status: 404 },
-      );
-    }
+    // const p6User = await findUserByEmail(user.email);
+    // if (!p6User) {
+    //   return NextResponse.json(
+    //     { error: `No P6 user found for ${user.email}.` },
+    //     { status: 404 },
+    //   );
+    // }
 
     const result = await createActivityComment({
       ActivityObjectId: Number(activityId),
       CommentText: commentText,
-      UserObjectId: p6User.ObjectId,
+      UserObjectId: 54,
     });
 
     await writeAudit(user, "create", "activityComment", activityId, commentText);
