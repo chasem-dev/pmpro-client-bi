@@ -7,7 +7,7 @@ const STATUS_PILL: Record<MilestoneStatus, string> = {
   "On Track": "bg-blue-100 text-blue-800",
 };
 
-function formatDate(value: string | null): string {
+export function formatDate(value: string | null): string {
   if (!value) return "—";
   // Metabase returns dates as "YYYY-MM-DD" (or ISO timestamps); parse the
   // date part as local time to avoid timezone day-shifts.

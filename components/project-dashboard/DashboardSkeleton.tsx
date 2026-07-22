@@ -106,6 +106,57 @@ export function DashboardSkeleton() {
           ))}
         </div>
       </SkeletonCard>
+
+      {/* Phase/status stacked chart: horizontal bar rows */}
+      <SkeletonCard className="sm:col-span-2">
+        <div className="space-y-2.5">
+          {PHASE_BAR_WIDTHS.map((width, i) => (
+            <div key={i} className="flex items-center gap-3">
+              <Sk className="h-3 w-32 shrink-0" />
+              <Sk className="h-4" style={{ width }} />
+            </div>
+          ))}
+        </div>
+      </SkeletonCard>
+
+      {/* Variance table: header + rows */}
+      <SkeletonCard className="sm:col-span-2">
+        <div className="space-y-3">
+          <div className="flex gap-4">
+            <Sk className="h-3 w-40" />
+            <Sk className="h-3 w-24" />
+            <Sk className="h-3 w-16" />
+            <Sk className="h-3 w-16" />
+            <Sk className="h-3 w-14" />
+          </div>
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-4">
+              <Sk className="h-3.5 w-48" />
+              <Sk className="h-3.5 w-24" />
+              <Sk className="h-4 w-20 rounded-full" />
+              <Sk className="h-3.5 w-16" />
+              <Sk className="h-3.5 w-10" />
+            </div>
+          ))}
+        </div>
+      </SkeletonCard>
+
+      {/* Start variance scatter */}
+      <SkeletonCard>
+        <Sk className="h-44 w-full" />
+      </SkeletonCard>
+
+      {/* Remaining duration: horizontal bar rows */}
+      <SkeletonCard>
+        <div className="space-y-2.5">
+          {PHASE_BAR_WIDTHS.slice(0, 5).map((width, i) => (
+            <div key={i} className="flex items-center gap-3">
+              <Sk className="h-3 w-28 shrink-0" />
+              <Sk className="h-4" style={{ width }} />
+            </div>
+          ))}
+        </div>
+      </SkeletonCard>
     </div>
   );
 }

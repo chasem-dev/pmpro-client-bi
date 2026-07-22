@@ -5,7 +5,14 @@ import type { ProjectDashboardData } from "@/lib/metabase-queries";
 import { DashboardCard } from "./DashboardCard";
 import { DashboardSkeleton } from "./DashboardSkeleton";
 import { MilestoneTable } from "./MilestoneTable";
-import { PhaseCompletionChart, StatusBreakdownChart } from "./charts";
+import { VarianceTable } from "./VarianceTable";
+import {
+  PhaseCompletionChart,
+  PhaseStatusChart,
+  RemainingDurationChart,
+  StartVarianceScatterChart,
+  StatusBreakdownChart,
+} from "./charts";
 
 /**
  * BI dashboard shown at the top of a project section. Fetches all widget
@@ -119,6 +126,25 @@ export function ProjectDashboard({
 
       <DashboardCard title="Schedule — Milestone Tracker">
         <MilestoneTable milestones={data.milestones} />
+      </DashboardCard>
+
+      <DashboardCard
+        title="Schedule — Activity Count by Phase & Status"
+        className="sm:col-span-2"
+      >
+        <PhaseStatusChart counts={data.phaseStatusCounts} />
+      </DashboardCard>
+
+      <DashboardCard title="Schedule — Variance Table" className="sm:col-span-2">
+        <VarianceTable rows={data.varianceRows} />
+      </DashboardCard>
+
+      <DashboardCard title="Schedule — Start Variance">
+        <StartVarianceScatterChart points={data.startVariance} />
+      </DashboardCard>
+
+      <DashboardCard title="Schedule — Remaining Duration by Phase">
+        <RemainingDurationChart phases={data.remainingByPhase} />
       </DashboardCard>
     </div>
   );
