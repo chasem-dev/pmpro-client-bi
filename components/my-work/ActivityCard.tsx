@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useUser } from "@clerk/nextjs";
 import type {
+  AssignableMember,
   MyActivity,
   MyActivityRelationship,
   FieldPolicies,
@@ -18,6 +20,98 @@ import {
 } from "./types";
 
 export const activityAnchorId = (objectId: number) => `activity-${objectId}`;
+
+function OwnerField({
+  ownerEmail,
+  editable,
+  members,
+  onSave,
+}: {
+  ownerEmail?: string;
+  editable: boolean;
+  members: AssignableMember[];
+  onSave: (email: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(ownerEmail ?? "");
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <div>
+      <span className="text-xs text-muted-foreground">Owner</span>
+      {editing ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {members.length > 0 ? (
+            <select
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              className="max-w-52 rounded border border-brand-border px-2 py-1 text-sm"
+            >
+              <option value="">Unassigned</option>
+              {/* Keep the current owner selectable even when they are not a
+                  member of the linked organization. */}
+              {draft && !members.some((m) => m.email === draft) && (
+                <option value={draft}>{draft}</option>
+              )}
+              {members.map((m) => (
+                <option key={m.email} value={m.email}>
+                  {m.name ? `${m.name} (${m.email})` : m.email}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              type="email"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="owner@example.com"
+              className="w-52 rounded border border-brand-border px-2 py-1 text-sm"
+            />
+          )}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              await onSave(draft.trim());
+              setBusy(false);
+              setEditing(false);
+            }}
+            className="text-xs text-secondary"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setDraft(ownerEmail ?? "");
+              setEditing(false);
+            }}
+            className="text-xs text-muted-foreground"
+          >
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <p className="truncate text-sm">
+          {ownerEmail ?? "—"}
+          {editable && (
+            <button
+              type="button"
+              onClick={() => {
+                setDraft(ownerEmail ?? "");
+                setEditing(true);
+              }}
+              className="ml-1 text-xs text-secondary"
+            >
+              Change
+            </button>
+          )}
+        </p>
+      )}
+    </div>
+  );
+}
 
 function RelationshipList({
   title,
@@ -383,17 +477,44 @@ function NonlaborSection({
   );
 }
 
+/** Local card updates for P6 activity fields we just saved successfully. */
+function patchFromActivityFields(
+  fields: Record<string, unknown>,
+): Partial<MyActivity> {
+  const patch: Partial<MyActivity> = {};
+  if (fields.PercentComplete !== undefined)
+    patch.percentComplete = Number(fields.PercentComplete);
+  if (typeof fields.ActualStartDate === "string")
+    patch.actualStart = fields.ActualStartDate;
+  if (typeof fields.ActualFinishDate === "string")
+    patch.actualFinish = fields.ActualFinishDate;
+  if (typeof fields.ExpectedFinishDate === "string")
+    patch.expectedFinish = fields.ExpectedFinishDate;
+  if ("OwnerEmail" in fields)
+    patch.ownerEmail = (fields.OwnerEmail as string | null) ?? undefined;
+  return patch;
+}
+
 export function ActivityCard({
   activity,
   policies,
   onRefresh,
+  onPatch,
   linkableIds,
+  canAssignOwner = false,
+  assignableMembers = [],
 }: {
   activity: MyActivity;
   policies?: FieldPolicies;
+  /** Background reconcile with P6 (should not blank the page). */
   onRefresh: () => void;
+  /** Applies a local update to this card only, for instant feedback. */
+  onPatch?: (patch: Partial<MyActivity>) => void;
   /** ObjectIds of activities rendered on this page (relationship links). */
   linkableIds?: Set<number>;
+  /** Whether the current user may reassign the activity owner. */
+  canAssignOwner?: boolean;
+  assignableMembers?: AssignableMember[];
 }) {
   const [open, setOpen] = useState(false);
   const [comment, setComment] = useState("");
@@ -403,6 +524,13 @@ export function ActivityCard({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const ref = useRef<HTMLElement>(null);
+
+  const { user } = useUser();
+  const myEmail = user?.primaryEmailAddress?.emailAddress?.toLowerCase();
+  const isMine =
+    !!activity.ownerEmail &&
+    !!myEmail &&
+    activity.ownerEmail.toLowerCase() === myEmail;
 
   // Relationship links use #activity-<id> anchors; when this card is the
   // target, expand it and scroll it into view.
@@ -428,7 +556,10 @@ export function ActivityCard({
     );
     setBusy(false);
     if (!res.ok) setError(res.error ?? "Update failed");
-    else onRefresh();
+    else {
+      onPatch?.(patchFromActivityFields(fields));
+      onRefresh();
+    }
   }
 
   async function addComment() {
@@ -457,13 +588,20 @@ export function ActivityCard({
     );
     setBusy(false);
     if (!res.ok) setError(res.error ?? "Step update failed");
-    else onRefresh();
+    else {
+      onPatch?.({
+        steps: activity.steps.map((s) =>
+          s.ObjectId === stepId ? { ...s, IsCompleted: completed } : s,
+        ),
+      });
+      onRefresh();
+    }
   }
 
   async function updateAssignment(
     id: number,
-    fields: Record<string, unknown>,
-    resourceType: string,
+    fields: { atCompletionUnits?: number; actualCost?: number },
+    resourceType: "labor" | "nonlabor" | "material",
   ) {
     setBusy(true);
     const res = await apiCall(
@@ -476,7 +614,20 @@ export function ActivityCard({
     );
     setBusy(false);
     if (!res.ok) setError(res.error ?? "Assignment update failed");
-    else onRefresh();
+    else {
+      const listKey =
+        resourceType === "labor"
+          ? "laborResources"
+          : resourceType === "nonlabor"
+            ? "nonLaborResources"
+            : "materialResources";
+      onPatch?.({
+        [listKey]: activity[listKey].map((r) =>
+          r.objectId === id ? { ...r, ...fields } : r,
+        ),
+      });
+      onRefresh();
+    }
   }
 
   const show = (key: string) => policy(policies, key).visible;
@@ -511,8 +662,24 @@ export function ActivityCard({
               </span>
             )}
           </p>
-          {show("activityId") && show("activityName") && activity.id && (
-            <p className="text-xs text-muted-foreground">{activity.id}</p>
+          {(activity.ownerEmail ||
+            (show("activityId") && show("activityName") && activity.id)) && (
+            <p className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+              {show("activityId") && show("activityName") && activity.id && (
+                <span className="shrink-0">{activity.id}</span>
+              )}
+              {activity.ownerEmail && (
+                <span className="flex min-w-0 items-center gap-1">
+                  <span aria-hidden>👤</span>
+                  <span className="truncate">{activity.ownerEmail}</span>
+                  {isMine && (
+                    <span className="shrink-0 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                      ⭐ You
+                    </span>
+                  )}
+                </span>
+              )}
+            </p>
           )}
         </div>
         <div className="flex shrink-0 items-center gap-3">
@@ -585,6 +752,12 @@ export function ActivityCard({
             <p className="text-sm">{fmtDate(activity.plannedFinish)}</p>
           </div>
         )}
+        <OwnerField
+          ownerEmail={activity.ownerEmail}
+          editable={canAssignOwner}
+          members={assignableMembers}
+          onSave={(email) => updateActivity({ OwnerEmail: email || null })}
+        />
       </header>
 
       <dl className="mt-3 grid gap-3 border-t border-brand-border/60 pt-3 sm:grid-cols-3">

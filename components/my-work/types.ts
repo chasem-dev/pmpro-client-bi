@@ -38,6 +38,7 @@ export type MyActivity = {
   actualFinish?: string;
   expectedFinish?: string;
   status?: string;
+  ownerEmail?: string;
   isLate?: boolean;
   steps: {
     ObjectId: number;
@@ -58,9 +59,16 @@ export type MyActivity = {
   successors?: MyActivityRelationship[];
 };
 
+export type AssignableMember = {
+  name: string;
+  email: string;
+};
+
 export type MyActivitiesResponse = {
   activities?: MyActivity[];
   policies?: FieldPolicies;
+  canAssignOwner?: boolean;
+  assignableMembers?: AssignableMember[];
   error?: string;
 };
 

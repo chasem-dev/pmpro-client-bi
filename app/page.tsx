@@ -6,7 +6,11 @@ import { AppFooter, AppHeader, PageHeader } from "@/components/AppShell";
 import { ActivityCard } from "@/components/my-work/ActivityCard";
 import { ProjectDashboard } from "@/components/project-dashboard/ProjectDashboard";
 import { ProjectsSection } from "@/components/my-work/ProjectsSection";
-import type { MyActivitiesResponse, MyActivity } from "@/components/my-work/types";
+import type {
+  AssignableMember,
+  MyActivitiesResponse,
+  MyActivity,
+} from "@/components/my-work/types";
 
 export default function Home() {
   return (
@@ -23,6 +27,10 @@ function MyWork() {
 
   const [activities, setActivities] = useState<MyActivity[]>([]);
   const [policies, setPolicies] = useState<MyActivitiesResponse["policies"]>();
+  const [canAssignOwner, setCanAssignOwner] = useState(false);
+  const [assignableMembers, setAssignableMembers] = useState<
+    AssignableMember[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,8 +39,10 @@ function MyWork() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // Card saves pass silent=true: the data is re-fetched to reconcile with P6,
+  // but the list is not swapped out for loading skeletons.
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     setError(null);
     const params = new URLSearchParams();
     if (useRange) {
@@ -51,6 +61,8 @@ function MyWork() {
       } else {
         setActivities(body.activities ?? []);
         setPolicies(body.policies);
+        setCanAssignOwner(body.canAssignOwner ?? false);
+        setAssignableMembers(body.assignableMembers ?? []);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -65,6 +77,18 @@ function MyWork() {
     const id = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(id);
   }, [load]);
+
+  const silentRefresh = useCallback(() => void load({ silent: true }), [load]);
+
+  // Immediate, local update of a single card after a successful save.
+  const patchActivity = useCallback(
+    (objectId: number, patch: Partial<MyActivity>) => {
+      setActivities((prev) =>
+        prev.map((a) => (a.objectId === objectId ? { ...a, ...patch } : a)),
+      );
+    },
+    [],
+  );
 
   const grouped = useMemo(() => {
     const map = new Map<string, MyActivity[]>();
@@ -237,8 +261,13 @@ function MyWork() {
                             key={activity.objectId}
                             activity={activity}
                             policies={policies}
-                            onRefresh={load}
+                            onRefresh={silentRefresh}
+                            onPatch={(patch) =>
+                              patchActivity(activity.objectId, patch)
+                            }
                             linkableIds={linkableIds}
+                            canAssignOwner={canAssignOwner}
+                            assignableMembers={assignableMembers}
                           />
                         ))}
                       </div>
@@ -250,8 +279,13 @@ function MyWork() {
                         key={activity.objectId}
                         activity={activity}
                         policies={policies}
-                        onRefresh={load}
+                        onRefresh={silentRefresh}
+                        onPatch={(patch) =>
+                          patchActivity(activity.objectId, patch)
+                        }
                         linkableIds={linkableIds}
+                        canAssignOwner={canAssignOwner}
+                        assignableMembers={assignableMembers}
                       />
                     ))}
                   </div>

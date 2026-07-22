@@ -3,13 +3,17 @@ import type { AppUser } from "@/lib/auth";
 import { filterProjectsInProd } from "@/lib/eps";
 import { canView, type FieldKey, type FieldPolicyRule } from "@/lib/fields";
 import { getAllowedCompanyEpsIds, loadFieldPoliciesForUser } from "@/lib/policy";
-import { getProjectObjectIdsForOrg } from "@/lib/project-org-links";
+import {
+  getLinkForProject,
+  getProjectObjectIdsForOrg,
+} from "@/lib/project-org-links";
 import {
   findActivityIdsByOwnerEmail,
   getActivitiesByIds,
   getActivityComments,
   getActivitySteps,
   getEps,
+  getOwnerEmailsForActivities,
   getProjectActivities,
   getProjects,
   getRelationships,
@@ -59,6 +63,8 @@ export interface MyActivityView {
   actualFinish?: string;
   expectedFinish?: string;
   status?: string;
+  /** Value of the "Owner Email" activity UDF. */
+  ownerEmail?: string;
   /** Overdue: past its planned dates without being completed/started. */
   isLate: boolean;
   steps: P6ActivityStep[];
@@ -70,9 +76,18 @@ export interface MyActivityView {
   successors: MyActivityRelationship[];
 }
 
+export interface AssignableMember {
+  name: string;
+  email: string;
+}
+
 export interface MyActivitiesResult {
   activities: MyActivityView[];
   policies: Record<string, { visible: boolean; editable: boolean }>;
+  /** Whether this user may reassign the Owner Email on listed activities. */
+  canAssignOwner: boolean;
+  /** Org members offered as owner choices (empty = free-form email entry). */
+  assignableMembers: AssignableMember[];
 }
 
 function policiesToRecord(
@@ -147,6 +162,22 @@ async function getOrgIdsForUser(user: AppUser): Promise<string[]> {
     limit: 100,
   });
   return memberships.data.map((m) => m.organization.id);
+}
+
+async function getOrgMembers(orgId: string): Promise<AssignableMember[]> {
+  const clerk = await clerkClient();
+  const { data } = await clerk.organizations.getOrganizationMembershipList({
+    organizationId: orgId,
+    limit: 200,
+  });
+  return data
+    .map((m) => ({
+      name: [m.publicUserData?.firstName, m.publicUserData?.lastName]
+        .filter(Boolean)
+        .join(" "),
+      email: m.publicUserData?.identifier ?? "",
+    }))
+    .filter((m) => m.email);
 }
 
 function mapResource(ra: P6ResourceAssignment): MyActivityResource {
@@ -230,6 +261,22 @@ export async function fetchMyActivities(
 
   const adminProjectView = !!(user.isGlobalAdmin && opts?.projectObjectId);
 
+  // Owner reassignment: global admins anywhere, org admins in their own
+  // projects (which is all this view ever shows them). The member list drives
+  // the owner picker on the activity cards.
+  const canAssignOwner = user.isGlobalAdmin || user.isProjectAdmin;
+  let assignableMembers: AssignableMember[] = [];
+  if (canAssignOwner) {
+    let memberOrgId: string | null = null;
+    if (adminProjectView) {
+      const link = await getLinkForProject(opts!.projectObjectId!);
+      memberOrgId = link?.clerkOrgId ?? null;
+    } else if (user.isProjectAdmin && user.orgId) {
+      memberOrgId = user.orgId;
+    }
+    if (memberOrgId) assignableMembers = await getOrgMembers(memberOrgId);
+  }
+
   // Activity selection:
   // - Global admins viewing a specific project see all of its activities.
   // - Project admins (org:admin) see every activity in the projects linked to
@@ -270,6 +317,8 @@ export async function fetchMyActivities(
       return {
         activities: [],
         policies: policiesToRecord(policies),
+        canAssignOwner,
+        assignableMembers,
       };
     }
     activities = await getActivitiesByIds(activityIds);
@@ -286,12 +335,14 @@ export async function fetchMyActivities(
   });
 
   const ids = filtered.map((a) => a.ObjectId);
-  const [steps, comments, assignments, relationships] = await Promise.all([
-    getActivitySteps(ids),
-    getActivityComments(ids),
-    getResourceAssignments(ids),
-    getRelationships(ids),
-  ]);
+  const [steps, comments, assignments, relationships, ownerEmails] =
+    await Promise.all([
+      getActivitySteps(ids),
+      getActivityComments(ids),
+      getResourceAssignments(ids),
+      getRelationships(ids),
+      getOwnerEmailsForActivities(ids),
+    ]);
 
   const stepsByActivity = new Map<number, P6ActivityStep[]>();
   for (const step of steps) {
@@ -355,6 +406,7 @@ export async function fetchMyActivities(
       actualFinish: a.ActualFinishDate,
       expectedFinish: a.ExpectedFinishDate,
       status: a.Status,
+      ownerEmail: ownerEmails.get(a.ObjectId),
       isLate: isLateActivity(a),
       steps: stepsByActivity.get(a.ObjectId) ?? [],
       comments: commentsByActivity.get(a.ObjectId) ?? [],
@@ -396,5 +448,7 @@ export async function fetchMyActivities(
   return {
     activities: views,
     policies: policiesToRecord(policies),
+    canAssignOwner,
+    assignableMembers,
   };
 }

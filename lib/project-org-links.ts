@@ -39,6 +39,13 @@ export async function listLinks(): Promise<ProjectOrgLink[]> {
   return collection.find({}, { projection: { _id: 0 } }).toArray();
 }
 
+export async function getLinkForProject(
+  projectObjectId: string,
+): Promise<ProjectOrgLink | null> {
+  const collection = await getCollection();
+  return collection.findOne({ projectObjectId }, { projection: { _id: 0 } });
+}
+
 export async function getProjectObjectIdsForOrg(
   clerkOrgId: string,
 ): Promise<string[]> {
