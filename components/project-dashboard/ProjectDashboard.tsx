@@ -15,14 +15,17 @@ import {
 } from "./charts";
 
 /**
- * BI dashboard shown at the top of a project section. Fetches all widget
- * data for one project from /api/projects/[objectId]/dashboard (Metabase).
+ * BI dashboard shown at the top of a project section, collapsed by default so
+ * activity cards stay within reach. Widget data for one project is fetched
+ * from /api/projects/[objectId]/dashboard (Metabase) on first expand.
  */
 export function ProjectDashboard({
   projectObjectId,
 }: {
   projectObjectId: number;
 }) {
+  const [open, setOpen] = useState(false);
+
   // Single state object keyed by project id so a project change naturally
   // reads as "loading" without synchronous setState calls in the effect.
   const [state, setState] = useState<{
@@ -32,6 +35,8 @@ export function ProjectDashboard({
   } | null>(null);
 
   useEffect(() => {
+    // Fetch lazily: only once expanded, and never twice for the same project.
+    if (!open || state?.forId === projectObjectId) return;
     let cancelled = false;
     (async () => {
       try {
@@ -62,30 +67,54 @@ export function ProjectDashboard({
     return () => {
       cancelled = true;
     };
-  }, [projectObjectId]);
+  }, [open, projectObjectId, state?.forId]);
 
   const loading = state?.forId !== projectObjectId;
   const data = loading ? null : state.data;
   const error = loading ? null : state.error;
 
-  if (loading) {
-    return <DashboardSkeleton />;
-  }
+  return (
+    <div className="mb-4">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between rounded-lg border border-brand-border bg-card px-4 py-2.5 shadow-sm transition-colors hover:bg-muted/50"
+      >
+        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Project Dashboard
+        </span>
+        <span
+          className={`text-xs text-muted-foreground/70 transition-transform ${open ? "rotate-90" : ""}`}
+          aria-hidden
+        >
+          ▶
+        </span>
+      </button>
 
-  if (error) {
-    return (
-      <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-        Failed to load project dashboard: {error}
-      </div>
-    );
-  }
+      {open && (
+        <div className="mt-3">
+          {loading ? (
+            <DashboardSkeleton />
+          ) : error ? (
+            <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+              Failed to load project dashboard: {error}
+            </div>
+          ) : data ? (
+            <DashboardGrid data={data} />
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
 
-  if (!data) return null;
-
+/** The widget grid, split out so the collapsed state renders none of it. */
+function DashboardGrid({ data }: { data: ProjectDashboardData }) {
   const percent = data.percentComplete;
 
   return (
-    <div className="mb-4 grid gap-4 sm:grid-cols-2">
+    <div className="grid gap-4 sm:grid-cols-2">
       <DashboardCard title="Schedule — % Complete">
         <div className="flex h-full flex-col justify-center gap-3 pb-2">
           <div className="text-4xl font-bold text-primary">

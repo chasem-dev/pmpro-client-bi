@@ -43,7 +43,7 @@ const STATUS_BAR_HEIGHTS = ["55%", "85%", "35%"];
 
 export function DashboardSkeleton() {
   return (
-    <div className="mb-4 grid gap-4 sm:grid-cols-2">
+    <div className="grid gap-4 sm:grid-cols-2">
       {/* % Complete stat */}
       <SkeletonCard>
         <div className="flex flex-col gap-3 pb-2">
