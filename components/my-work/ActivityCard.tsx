@@ -233,6 +233,60 @@ function EditableDate({
   );
 }
 
+/**
+ * Loads previously saved daily entries for this activity so the week grid
+ * shows the existing breakdown instead of starting blank after a refresh.
+ * Returns the values map keyed `${assignmentId}-${date}` plus dirty tracking
+ * so only edited days are re-submitted.
+ */
+function useDailyEntries(
+  endpoint: "/api/timesheet" | "/api/nonlabor",
+  activityObjectId: number,
+  dates: string[],
+  amountField: "hours" | "units",
+) {
+  const [values, setValues] = useState<Record<string, number>>({});
+  const [dirty, setDirty] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+  const from = dates[0];
+  const to = dates[dates.length - 1];
+
+  useEffect(() => {
+    let cancelled = false;
+    apiCall<{ entries?: Record<string, unknown>[] }>(
+      `${endpoint}?activityId=${activityObjectId}&from=${from}&to=${to}`,
+    ).then((res) => {
+      if (cancelled) return;
+      if (res.ok) {
+        const next: Record<string, number> = {};
+        for (const e of res.data?.entries ?? []) {
+          const amount = Number(e[amountField]);
+          if (Number.isFinite(amount)) {
+            next[`${e.resourceAssignmentObjectId}-${e.workDate}`] = amount;
+          }
+        }
+        setValues(next);
+        setDirty(new Set());
+      }
+      setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [endpoint, activityObjectId, from, to, amountField]);
+
+  function setValue(key: string, amount: number) {
+    setValues((v) => ({ ...v, [key]: amount }));
+    setDirty((d) => new Set(d).add(key));
+  }
+
+  function clearDirty() {
+    setDirty(new Set());
+  }
+
+  return { values, dirty, loading, setValue, clearDirty };
+}
+
 function TimesheetGrid({
   activity,
   policies,
@@ -243,7 +297,12 @@ function TimesheetGrid({
   onSaved: () => void;
 }) {
   const dates = weekDates();
-  const [values, setValues] = useState<Record<string, number>>({});
+  const { values, dirty, loading, setValue, clearDirty } = useDailyEntries(
+    "/api/timesheet",
+    activity.objectId,
+    dates,
+    "hours",
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -253,20 +312,28 @@ function TimesheetGrid({
   async function submit() {
     setBusy(true);
     setError(null);
+    // Only the days edited this session; sending 0 clears a saved day.
     const entries = activity.laborResources.flatMap((r) =>
       dates
+        .filter((d) => dirty.has(`${r.objectId}-${d}`))
         .map((d) => ({
           activityObjectId: activity.objectId,
           resourceAssignmentObjectId: r.objectId,
           workDate: d,
           hours: values[`${r.objectId}-${d}`] ?? 0,
-        }))
-        .filter((e) => e.hours > 0),
+        })),
     );
+    if (entries.length === 0) {
+      setBusy(false);
+      return;
+    }
     const res = await apiCall("/api/timesheet", jsonInit("POST", { entries }));
     setBusy(false);
     if (!res.ok) setError(res.error ?? "Failed to save timesheet");
-    else onSaved();
+    else {
+      clearDirty();
+      onSaved();
+    }
   }
 
   return (
@@ -298,13 +365,11 @@ function TimesheetGrid({
                         type="number"
                         min={0}
                         step={0.25}
-                        className="w-14 rounded border border-brand-border px-1"
+                        disabled={loading}
+                        className="w-14 rounded border border-brand-border px-1 disabled:opacity-50"
                         value={values[key] ?? ""}
                         onChange={(e) =>
-                          setValues((v) => ({
-                            ...v,
-                            [key]: Number(e.target.value) || 0,
-                          }))
+                          setValue(key, Number(e.target.value) || 0)
                         }
                       />
                     </td>
@@ -318,7 +383,7 @@ function TimesheetGrid({
       {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
       <button
         type="button"
-        disabled={busy}
+        disabled={busy || loading || dirty.size === 0}
         onClick={() => void submit()}
         className="mt-2 rounded bg-primary px-3 py-1 text-xs text-white disabled:opacity-50"
       >
@@ -338,7 +403,12 @@ function NonlaborSection({
   onSaved: () => void;
 }) {
   const dates = weekDates();
-  const [values, setValues] = useState<Record<string, number>>({});
+  const { values, dirty, loading, setValue, clearDirty } = useDailyEntries(
+    "/api/nonlabor",
+    activity.objectId,
+    dates,
+    "units",
+  );
   const [totals, setTotals] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -351,20 +421,28 @@ function NonlaborSection({
   async function submitDaily() {
     setBusy(true);
     setError(null);
+    // Only the days edited this session; sending 0 clears a saved day.
     const entries = activity.nonLaborResources.flatMap((r) =>
       dates
+        .filter((d) => dirty.has(`${r.objectId}-${d}`))
         .map((d) => ({
           activityObjectId: activity.objectId,
           resourceAssignmentObjectId: r.objectId,
           workDate: d,
           units: values[`${r.objectId}-${d}`] ?? 0,
-        }))
-        .filter((e) => e.units > 0),
+        })),
     );
+    if (entries.length === 0) {
+      setBusy(false);
+      return;
+    }
     const res = await apiCall("/api/nonlabor", jsonInit("POST", { entries }));
     setBusy(false);
     if (!res.ok) setError(res.error ?? "Failed to save");
-    else onSaved();
+    else {
+      clearDirty();
+      onSaved();
+    }
   }
 
   async function submitTotal(resourceId: number) {
@@ -418,13 +496,11 @@ function NonlaborSection({
                             type="number"
                             min={0}
                             step={0.1}
-                            className="w-14 rounded border border-brand-border px-1"
+                            disabled={loading}
+                            className="w-14 rounded border border-brand-border px-1 disabled:opacity-50"
                             value={values[key] ?? ""}
                             onChange={(e) =>
-                              setValues((v) => ({
-                                ...v,
-                                [key]: Number(e.target.value) || 0,
-                              }))
+                              setValue(key, Number(e.target.value) || 0)
                             }
                           />
                         </td>
@@ -437,7 +513,7 @@ function NonlaborSection({
           </div>
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || loading || dirty.size === 0}
             onClick={() => void submitDaily()}
             className="mt-2 rounded bg-primary px-3 py-1 text-xs text-white disabled:opacity-50"
           >
@@ -474,6 +550,50 @@ function NonlaborSection({
       )}
       {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
     </div>
+  );
+}
+
+/**
+ * Numeric input that saves on blur. Unlike a bare defaultValue input it
+ * re-syncs when the server value changes (e.g. a timesheet submission also
+ * updates At Complete in P6), and it only saves when the value was edited.
+ */
+function UnitsInput({
+  value,
+  onSave,
+}: {
+  value?: number;
+  onSave: (n: number) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState(value != null ? String(value) : "");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Adopt refreshed server data unless the user is mid-edit (focused).
+  const lastValue = useRef(value);
+  useEffect(() => {
+    if (lastValue.current !== value) {
+      lastValue.current = value;
+      if (document.activeElement !== inputRef.current) {
+        setDraft(value != null ? String(value) : "");
+      }
+    }
+  }, [value]);
+
+  return (
+    <input
+      ref={inputRef}
+      type="number"
+      step={0.1}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        const n = Number(draft);
+        if (draft !== "" && Number.isFinite(n) && n !== value) {
+          void onSave(n);
+        }
+      }}
+      className="w-20 rounded border border-brand-border px-1"
+    />
   );
 }
 
@@ -875,20 +995,15 @@ export function ActivityCard({
                       {show("atCompleteLaborUnits") && (
                         <td>
                           {edit("atCompleteLaborUnits") ? (
-                            <input
-                              type="number"
-                              step={0.1}
-                              defaultValue={r.atCompletionUnits ?? ""}
-                              onBlur={(e) =>
-                                void updateAssignment(
+                            <UnitsInput
+                              value={r.atCompletionUnits}
+                              onSave={(n) =>
+                                updateAssignment(
                                   r.objectId,
-                                  {
-                                    atCompletionUnits: Number(e.target.value),
-                                  },
+                                  { atCompletionUnits: n },
                                   "labor",
                                 )
                               }
-                              className="w-20 rounded border border-brand-border px-1"
                             />
                           ) : (
                             fmtNum(r.atCompletionUnits)
@@ -934,20 +1049,15 @@ export function ActivityCard({
                       {show("atCompleteNonLaborUnits") && (
                         <td>
                           {edit("atCompleteNonLaborUnits") ? (
-                            <input
-                              type="number"
-                              step={0.1}
-                              defaultValue={r.atCompletionUnits ?? ""}
-                              onBlur={(e) =>
-                                void updateAssignment(
+                            <UnitsInput
+                              value={r.atCompletionUnits}
+                              onSave={(n) =>
+                                updateAssignment(
                                   r.objectId,
-                                  {
-                                    atCompletionUnits: Number(e.target.value),
-                                  },
+                                  { atCompletionUnits: n },
                                   "nonlabor",
                                 )
                               }
-                              className="w-20 rounded border border-brand-border px-1"
                             />
                           ) : (
                             fmtNum(r.atCompletionUnits)
@@ -965,58 +1075,18 @@ export function ActivityCard({
           </section>
         )}
 
-      {(show("materialName") || show("budgetedMaterialCost")) &&
-        activity.materialResources.length > 0 && (
-          <section className="mt-3">
-            <h4 className="text-xs font-semibold uppercase text-muted-foreground">
-              Materials
-            </h4>
-            <div className="mt-1 overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-left text-muted-foreground">
-                    {show("materialName") && <th className="py-1">Material</th>}
-                    {show("budgetedMaterialCost") && <th>Budgeted Cost</th>}
-                    {show("actualMaterialCost") && <th>Actual Cost</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {activity.materialResources.map((r) => (
-                    <tr key={r.objectId}>
-                      {show("materialName") && (
-                        <td className="py-1">{r.resourceName ?? r.objectId}</td>
-                      )}
-                      {show("budgetedMaterialCost") && (
-                        <td>{fmtNum(r.plannedCost, 0)}</td>
-                      )}
-                      {show("actualMaterialCost") && (
-                        <td>
-                          {edit("actualMaterialCost") ? (
-                            <input
-                              type="number"
-                              step={1}
-                              defaultValue={r.actualCost ?? ""}
-                              onBlur={(e) =>
-                                void updateAssignment(
-                                  r.objectId,
-                                  { actualCost: Number(e.target.value) },
-                                  "material",
-                                )
-                              }
-                              className="w-24 rounded border border-brand-border px-1"
-                            />
-                          ) : (
-                            fmtNum(r.actualCost, 0)
-                          )}
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        )}
+      {show("materialName") && activity.materialResources.length > 0 && (
+        <section className="mt-3">
+          <h4 className="text-xs font-semibold uppercase text-muted-foreground">
+            Materials
+          </h4>
+          <ul className="mt-1 space-y-1 text-sm">
+            {activity.materialResources.map((r) => (
+              <li key={r.objectId}>{r.resourceName ?? r.objectId}</li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <TimesheetGrid
         activity={activity}
