@@ -5,7 +5,10 @@ import { authErrorResponse } from "@/lib/api-utils";
 import { writeAudit } from "@/lib/audit";
 import { canEdit } from "@/lib/fields";
 import { loadFieldPoliciesForUser } from "@/lib/policy";
-import { createActivityComment, findUserByEmail } from "@/lib/p6";
+import {
+  createActivityComment,
+  tryMarkActivitiesForUpdateReview,
+} from "@/lib/p6";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +57,7 @@ export async function POST(
       UserObjectId: 54,
     });
 
+    await tryMarkActivitiesForUpdateReview([Number(activityId)]);
     await writeAudit(user, "create", "activityComment", activityId, commentText);
     return NextResponse.json({ result }, { status: 201 });
   } catch (err) {

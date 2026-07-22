@@ -5,7 +5,10 @@ import { writeAudit } from "@/lib/audit";
 import { nonlaborEntries } from "@/lib/db";
 import { canEdit } from "@/lib/fields";
 import { loadFieldPoliciesForUser } from "@/lib/policy";
-import { updateResourceAssignment } from "@/lib/p6";
+import {
+  tryMarkActivitiesForUpdateReview,
+  updateResourceAssignment,
+} from "@/lib/p6";
 
 export const dynamic = "force-dynamic";
 
@@ -56,6 +59,7 @@ export async function POST(request: Request) {
       runningTotal?: {
         resourceAssignmentObjectId: number;
         units: number;
+        activityObjectId?: number;
       };
     };
     try {
@@ -77,6 +81,11 @@ export async function POST(request: Request) {
         ActualUnits: units,
         AtCompletionUnits: units,
       });
+      if (body.runningTotal.activityObjectId != null) {
+        await tryMarkActivitiesForUpdateReview([
+          Number(body.runningTotal.activityObjectId),
+        ]);
+      }
       await writeAudit(
         user,
         "update",
@@ -145,6 +154,10 @@ export async function POST(request: Request) {
         AtCompletionUnits: totalUnits,
       });
     }
+
+    await tryMarkActivitiesForUpdateReview(
+      entries.map((e) => e.activityObjectId),
+    );
 
     await writeAudit(
       user,

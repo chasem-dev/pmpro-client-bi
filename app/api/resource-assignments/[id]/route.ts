@@ -5,7 +5,10 @@ import { authErrorResponse } from "@/lib/api-utils";
 import { writeAudit } from "@/lib/audit";
 import { canEdit } from "@/lib/fields";
 import { loadFieldPoliciesForUser } from "@/lib/policy";
-import { updateResourceAssignment } from "@/lib/p6";
+import {
+  tryMarkActivitiesForUpdateReview,
+  updateResourceAssignment,
+} from "@/lib/p6";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +32,7 @@ export async function PUT(
       atCompletionUnits?: number;
       actualCost?: number;
       resourceType?: string;
+      activityObjectId?: number;
     };
     try {
       body = await req.json();
@@ -92,6 +96,9 @@ export async function PUT(
     }
 
     const result = await updateResourceAssignment(update);
+    if (body.activityObjectId != null) {
+      await tryMarkActivitiesForUpdateReview([Number(body.activityObjectId)]);
+    }
     await writeAudit(user, "update", "resourceAssignment", id, JSON.stringify(update));
     return NextResponse.json({ result });
   } catch (err) {

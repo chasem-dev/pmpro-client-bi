@@ -1,3 +1,4 @@
+import { clerkClient } from "@clerk/nextjs/server";
 import type { AppUser } from "@/lib/auth";
 import { filterProjectsInProd } from "@/lib/eps";
 import { canView, type FieldKey, type FieldPolicyRule } from "@/lib/fields";
@@ -11,10 +12,12 @@ import {
   getEps,
   getProjectActivities,
   getProjects,
+  getRelationships,
   getResourceAssignments,
   type P6Activity,
   type P6ActivityComment,
   type P6ActivityStep,
+  type P6Relationship,
   type P6ResourceAssignment,
 } from "@/lib/p6";
 
@@ -27,6 +30,18 @@ export interface MyActivityResource {
   atCompletionUnits?: number;
   plannedCost?: number;
   actualCost?: number;
+}
+
+export interface MyActivityRelationship {
+  /** Relationship ObjectId in P6. */
+  objectId: number;
+  /** ObjectId of the activity on the other side of the relationship. */
+  activityObjectId: number;
+  activityId?: string;
+  activityName?: string;
+  /** e.g. "Finish to Start". */
+  type?: string;
+  lag?: number;
 }
 
 export interface MyActivityView {
@@ -44,11 +59,15 @@ export interface MyActivityView {
   actualFinish?: string;
   expectedFinish?: string;
   status?: string;
+  /** Overdue: past its planned dates without being completed/started. */
+  isLate: boolean;
   steps: P6ActivityStep[];
   comments: P6ActivityComment[];
   laborResources: MyActivityResource[];
   nonLaborResources: MyActivityResource[];
   materialResources: MyActivityResource[];
+  predecessors: MyActivityRelationship[];
+  successors: MyActivityRelationship[];
 }
 
 export interface MyActivitiesResult {
@@ -104,6 +123,32 @@ function inTimeWindow(
   return actStart <= windowEnd && actEnd >= windowStart;
 }
 
+/**
+ * An activity is "late" when it should have started or finished by now but
+ * hasn't: planned finish is in the past without completion, or planned start
+ * is in the past and the activity was never started.
+ */
+function isLateActivity(activity: P6Activity, now = new Date()): boolean {
+  const status = activity.Status ?? "";
+  if (status === "Completed") return false;
+  const finish = parseDate(activity.PlannedFinishDate);
+  if (finish && finish < now) return true;
+  const start = parseDate(activity.PlannedStartDate);
+  if (start && start < now && status === "Not Started") return true;
+  return false;
+}
+
+/** Every Clerk organization the user belongs to, preferring the active one. */
+async function getOrgIdsForUser(user: AppUser): Promise<string[]> {
+  if (user.orgId) return [user.orgId];
+  const clerk = await clerkClient();
+  const memberships = await clerk.users.getOrganizationMembershipList({
+    userId: user.userId,
+    limit: 100,
+  });
+  return memberships.data.map((m) => m.organization.id);
+}
+
 function mapResource(ra: P6ResourceAssignment): MyActivityResource {
   return {
     objectId: ra.ObjectId,
@@ -155,7 +200,13 @@ function applyPolicyVisibility(
 
 export async function fetchMyActivities(
   user: AppUser,
-  opts?: { days?: number; from?: string; to?: string },
+  opts?: {
+    days?: number;
+    from?: string;
+    to?: string;
+    /** Global admins only: view every activity of one project. */
+    projectObjectId?: string;
+  },
 ): Promise<MyActivitiesResult> {
   const [policies, allowedCompanies, epsList, projects] = await Promise.all([
     loadFieldPoliciesForUser(user),
@@ -167,7 +218,7 @@ export async function fetchMyActivities(
   const prodProjects = filterProjectsInProd(projects, epsList);
   const projectById = new Map(prodProjects.map((p) => [p.ObjectId, p]));
 
-  const allowedProjectIds = new Set(
+  const companyAllowedProjectIds = new Set(
     prodProjects
       .filter((p) => {
         if (!allowedCompanies) return true;
@@ -177,21 +228,44 @@ export async function fetchMyActivities(
       .map((p) => p.ObjectId),
   );
 
-  // Project admins (org:admin) see every activity in the projects linked to
-  // their organization; everyone else only sees activities assigned to them
-  // via the Owner Email UDF.
+  const adminProjectView = !!(user.isGlobalAdmin && opts?.projectObjectId);
+
+  // Activity selection:
+  // - Global admins viewing a specific project see all of its activities.
+  // - Project admins (org:admin) see every activity in the projects linked to
+  //   their organization.
+  // - Everyone else sees only activities assigned to them via the Owner Email
+  //   UDF, and only within projects linked to one of their organizations.
   let activities: P6Activity[];
-  if (user.isProjectAdmin && user.orgId) {
+  let allowedProjectIds: Set<string>;
+  if (adminProjectView) {
+    allowedProjectIds = new Set([opts!.projectObjectId!]);
+    activities = await getProjectActivities(opts!.projectObjectId!);
+  } else if (user.isProjectAdmin && user.orgId) {
     const orgProjectIds = await getProjectObjectIdsForOrg(user.orgId);
     const adminProjectIds = orgProjectIds.filter((id) =>
-      allowedProjectIds.has(id),
+      companyAllowedProjectIds.has(id),
     );
+    allowedProjectIds = new Set(adminProjectIds);
     const perProject = await Promise.all(
       adminProjectIds.map((id) => getProjectActivities(id)),
     );
     activities = perProject.flat();
   } else {
-    const activityIds = await findActivityIdsByOwnerEmail(user.email);
+    // Owner Email matches only count inside projects linked to the user's
+    // organization(s); activities elsewhere in P6 are ignored.
+    const orgIds = await getOrgIdsForUser(user);
+    const linkedIdLists = await Promise.all(
+      orgIds.map((id) => getProjectObjectIdsForOrg(id)),
+    );
+    allowedProjectIds = new Set(
+      linkedIdLists.flat().filter((id) => companyAllowedProjectIds.has(id)),
+    );
+
+    const activityIds =
+      allowedProjectIds.size > 0
+        ? await findActivityIdsByOwnerEmail(user.email)
+        : [];
     if (activityIds.length === 0) {
       return {
         activities: [],
@@ -201,17 +275,22 @@ export async function fetchMyActivities(
     activities = await getActivitiesByIds(activityIds);
   }
 
+  // Late activities are always shown, even outside the selected time window,
+  // so overdue work can't silently drop off the list.
   const filtered = activities.filter((a) => {
     const projectId = a.ProjectObjectId ? String(a.ProjectObjectId) : null;
     if (!projectId || !allowedProjectIds.has(projectId)) return false;
-    return inTimeWindow(a, opts?.days, opts?.from, opts?.to);
+    return (
+      inTimeWindow(a, opts?.days, opts?.from, opts?.to) || isLateActivity(a)
+    );
   });
 
   const ids = filtered.map((a) => a.ObjectId);
-  const [steps, comments, assignments] = await Promise.all([
+  const [steps, comments, assignments, relationships] = await Promise.all([
     getActivitySteps(ids),
     getActivityComments(ids),
     getResourceAssignments(ids),
+    getRelationships(ids),
   ]);
 
   const stepsByActivity = new Map<number, P6ActivityStep[]>();
@@ -233,6 +312,18 @@ export async function fetchMyActivities(
     const list = assignmentsByActivity.get(ra.ActivityObjectId) ?? [];
     list.push(ra);
     assignmentsByActivity.set(ra.ActivityObjectId, list);
+  }
+
+  const predecessorsByActivity = new Map<number, P6Relationship[]>();
+  const successorsByActivity = new Map<number, P6Relationship[]>();
+  for (const rel of relationships) {
+    // A relationship is a predecessor of its successor activity, and vice versa.
+    const preds = predecessorsByActivity.get(rel.SuccessorActivityObjectId) ?? [];
+    preds.push(rel);
+    predecessorsByActivity.set(rel.SuccessorActivityObjectId, preds);
+    const succs = successorsByActivity.get(rel.PredecessorActivityObjectId) ?? [];
+    succs.push(rel);
+    successorsByActivity.set(rel.PredecessorActivityObjectId, succs);
   }
 
   const views: MyActivityView[] = filtered.map((a) => {
@@ -264,11 +355,30 @@ export async function fetchMyActivities(
       actualFinish: a.ActualFinishDate,
       expectedFinish: a.ExpectedFinishDate,
       status: a.Status,
+      isLate: isLateActivity(a),
       steps: stepsByActivity.get(a.ObjectId) ?? [],
       comments: commentsByActivity.get(a.ObjectId) ?? [],
       laborResources: labor.map(mapResource),
       nonLaborResources: nonLabor.map(mapResource),
       materialResources: material.map(mapResource),
+      predecessors: (predecessorsByActivity.get(a.ObjectId) ?? []).map(
+        (rel) => ({
+          objectId: rel.ObjectId,
+          activityObjectId: rel.PredecessorActivityObjectId,
+          activityId: rel.PredecessorActivityId,
+          activityName: rel.PredecessorActivityName,
+          type: rel.Type,
+          lag: rel.Lag,
+        }),
+      ),
+      successors: (successorsByActivity.get(a.ObjectId) ?? []).map((rel) => ({
+        objectId: rel.ObjectId,
+        activityObjectId: rel.SuccessorActivityObjectId,
+        activityId: rel.SuccessorActivityId,
+        activityName: rel.SuccessorActivityName,
+        type: rel.Type,
+        lag: rel.Lag,
+      })),
     };
     return applyPolicyVisibility(view, policies);
   });

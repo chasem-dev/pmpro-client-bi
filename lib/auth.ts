@@ -1,4 +1,5 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
+import { isAdminUser } from "@/lib/admin";
 
 export interface AppUser {
   userId: string;
@@ -6,6 +7,8 @@ export interface AppUser {
   orgId: string | null;
   /** True when the user holds org:admin in their active Clerk organization. */
   isProjectAdmin: boolean;
+  /** True for global admins (lib/admin.ts) who may access any project. */
+  isGlobalAdmin: boolean;
 }
 
 export async function requireAppUser(): Promise<AppUser> {
@@ -28,7 +31,8 @@ export async function requireAppUser(): Promise<AppUser> {
     email: email.toLowerCase(),
     orgId: orgId ?? null,
     isProjectAdmin: orgId ? has({ role: "org:admin" }) : false,
-  };
+    isGlobalAdmin: isAdminUser(userId),
+    };
 }
 
 export class AuthError extends Error {

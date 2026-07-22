@@ -1,7 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import type { MyActivity, FieldPolicies } from "./types";
+import { useEffect, useRef, useState } from "react";
+import type {
+  MyActivity,
+  MyActivityRelationship,
+  FieldPolicies,
+} from "./types";
 import {
   apiCall,
   fmtDate,
@@ -12,6 +16,53 @@ import {
   toP6Date,
   weekDates,
 } from "./types";
+
+export const activityAnchorId = (objectId: number) => `activity-${objectId}`;
+
+function RelationshipList({
+  title,
+  relationships,
+  linkableIds,
+}: {
+  title: string;
+  relationships: MyActivityRelationship[];
+  linkableIds?: Set<number>;
+}) {
+  if (relationships.length === 0) return null;
+  return (
+    <div>
+      <h5 className="text-xs font-semibold text-muted-foreground">{title}</h5>
+      <ul className="mt-1 space-y-1">
+        {relationships.map((rel) => {
+          const label = rel.activityName ?? rel.activityId ?? rel.activityObjectId;
+          const meta = [rel.type, rel.lag ? `lag ${fmtNum(rel.lag)}` : null]
+            .filter(Boolean)
+            .join(", ");
+          const linkable = linkableIds?.has(rel.activityObjectId);
+          return (
+            <li key={rel.objectId} className="text-sm">
+              {linkable ? (
+                <a
+                  href={`#${activityAnchorId(rel.activityObjectId)}`}
+                  className="font-medium text-secondary hover:underline"
+                >
+                  {label}
+                </a>
+              ) : (
+                <span>{label}</span>
+              )}
+              {meta && (
+                <span className="ml-1 text-xs text-muted-foreground/70">
+                  ({meta})
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
 
 function EditableDate({
   label,
@@ -230,7 +281,11 @@ function NonlaborSection({
     const res = await apiCall(
       "/api/nonlabor",
       jsonInit("POST", {
-        runningTotal: { resourceAssignmentObjectId: resourceId, units },
+        runningTotal: {
+          resourceAssignmentObjectId: resourceId,
+          units,
+          activityObjectId: activity.objectId,
+        },
       }),
     );
     setBusy(false);
@@ -332,10 +387,13 @@ export function ActivityCard({
   activity,
   policies,
   onRefresh,
+  linkableIds,
 }: {
   activity: MyActivity;
   policies?: FieldPolicies;
   onRefresh: () => void;
+  /** ObjectIds of activities rendered on this page (relationship links). */
+  linkableIds?: Set<number>;
 }) {
   const [open, setOpen] = useState(false);
   const [comment, setComment] = useState("");
@@ -344,6 +402,22 @@ export function ActivityCard({
   );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const ref = useRef<HTMLElement>(null);
+
+  // Relationship links use #activity-<id> anchors; when this card is the
+  // target, expand it and scroll it into view.
+  useEffect(() => {
+    const anchor = activityAnchorId(activity.objectId);
+    function onHashChange() {
+      if (window.location.hash === `#${anchor}`) {
+        setOpen(true);
+        ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }
+    onHashChange();
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, [activity.objectId]);
 
   async function updateActivity(fields: Record<string, unknown>) {
     setBusy(true);
@@ -376,7 +450,10 @@ export function ActivityCard({
     setBusy(true);
     const res = await apiCall(
       `/api/activity-steps/${stepId}`,
-      jsonInit("PUT", { isCompleted: completed }),
+      jsonInit("PUT", {
+        isCompleted: completed,
+        activityObjectId: activity.objectId,
+      }),
     );
     setBusy(false);
     if (!res.ok) setError(res.error ?? "Step update failed");
@@ -391,7 +468,11 @@ export function ActivityCard({
     setBusy(true);
     const res = await apiCall(
       `/api/resource-assignments/${id}`,
-      jsonInit("PUT", { ...fields, resourceType }),
+      jsonInit("PUT", {
+        ...fields,
+        resourceType,
+        activityObjectId: activity.objectId,
+      }),
     );
     setBusy(false);
     if (!res.ok) setError(res.error ?? "Assignment update failed");
@@ -402,18 +483,33 @@ export function ActivityCard({
   const edit = (key: string) => policy(policies, key).editable;
 
   return (
-    <article className="rounded-lg border border-brand-border bg-card">
+    <article
+      ref={ref}
+      id={activityAnchorId(activity.objectId)}
+      className={`scroll-mt-24 rounded-lg border bg-card ${
+        activity.isLate ? "border-red-300" : "border-brand-border"
+      }`}
+    >
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex w-full items-center justify-between gap-3 rounded-lg px-4 py-3 text-left transition-colors hover:bg-muted/50"
+        className={`flex w-full items-center justify-between gap-3 rounded-lg px-4 py-3 text-left transition-colors ${
+          activity.isLate ? "bg-red-50/60 hover:bg-red-50" : "hover:bg-muted/50"
+        }`}
       >
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-foreground">
-            {show("activityName")
-              ? activity.name
-              : (activity.id ?? activity.objectId)}
+          <p className="flex items-center gap-2 text-sm font-medium text-foreground">
+            <span className="truncate">
+              {show("activityName")
+                ? activity.name
+                : (activity.id ?? activity.objectId)}
+            </span>
+            {activity.isLate && (
+              <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-700">
+                Late
+              </span>
+            )}
           </p>
           {show("activityId") && show("activityName") && activity.id && (
             <p className="text-xs text-muted-foreground">{activity.id}</p>
@@ -524,30 +620,57 @@ export function ActivityCard({
             Activity Steps
           </h4>
           <ul className="mt-1 space-y-1">
-            {activity.steps.map((step) => (
-              <li key={step.ObjectId} className="flex items-center gap-2 text-sm">
-                {edit("activityStep") ? (
-                  <input
-                    type="checkbox"
-                    checked={!!step.IsCompleted}
-                    disabled={busy}
-                    onChange={(e) =>
-                      void toggleStep(step.ObjectId, e.target.checked)
-                    }
-                  />
-                ) : (
-                  <span>{step.IsCompleted ? "✓" : "○"}</span>
-                )}
-                <span
-                  className={
-                    step.IsCompleted ? "text-muted-foreground/70 line-through" : ""
-                  }
+            {activity.steps.map((step) => {
+              const completed = step.IsCompleted === true;
+              return (
+                <li
+                  key={step.ObjectId}
+                  className="flex items-center gap-2 text-sm"
                 >
-                  {step.Name}
-                </span>
-              </li>
-            ))}
+                  {edit("activityStep") ? (
+                    <input
+                      type="checkbox"
+                      checked={completed}
+                      disabled={busy}
+                      onChange={(e) =>
+                        void toggleStep(step.ObjectId, e.target.checked)
+                      }
+                    />
+                  ) : (
+                    <span>{completed ? "✓" : "○"}</span>
+                  )}
+                  <span
+                    className={
+                      completed ? "text-muted-foreground/70 line-through" : ""
+                    }
+                  >
+                    {step.Name}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
+        </section>
+      )}
+
+      {((activity.predecessors?.length ?? 0) > 0 ||
+        (activity.successors?.length ?? 0) > 0) && (
+        <section className="mt-3">
+          <h4 className="text-xs font-semibold uppercase text-muted-foreground">
+            Relationships
+          </h4>
+          <div className="mt-1 grid gap-3 sm:grid-cols-2">
+            <RelationshipList
+              title="Predecessors (hand-offs in)"
+              relationships={activity.predecessors ?? []}
+              linkableIds={linkableIds}
+            />
+            <RelationshipList
+              title="Successors (hand-offs out)"
+              relationships={activity.successors ?? []}
+              linkableIds={linkableIds}
+            />
+          </div>
         </section>
       )}
 

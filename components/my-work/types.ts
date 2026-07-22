@@ -14,6 +14,15 @@ export type MyActivityResource = {
   actualCost?: number;
 };
 
+export type MyActivityRelationship = {
+  objectId: number;
+  activityObjectId: number;
+  activityId?: string;
+  activityName?: string;
+  type?: string;
+  lag?: number;
+};
+
 export type MyActivity = {
   objectId: number;
   id?: string;
@@ -29,10 +38,12 @@ export type MyActivity = {
   actualFinish?: string;
   expectedFinish?: string;
   status?: string;
+  isLate?: boolean;
   steps: {
     ObjectId: number;
     Name: string;
     IsCompleted?: boolean;
+    PercentComplete?: number;
   }[];
   comments: {
     ObjectId?: number;
@@ -43,6 +54,8 @@ export type MyActivity = {
   laborResources: MyActivityResource[];
   nonLaborResources: MyActivityResource[];
   materialResources: MyActivityResource[];
+  predecessors?: MyActivityRelationship[];
+  successors?: MyActivityRelationship[];
 };
 
 export type MyActivitiesResponse = {

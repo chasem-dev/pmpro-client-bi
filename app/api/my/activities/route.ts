@@ -14,10 +14,21 @@ export async function GET(request: Request) {
     const to = url.searchParams.get("to") ?? undefined;
     const days = daysParam ? Number(daysParam) : undefined;
 
+    // Global admins may view any project's activities via ?project=<ObjectId>.
+    const projectParam = url.searchParams.get("project");
+    if (projectParam && !user.isGlobalAdmin) {
+      return NextResponse.json(
+        { error: "Only global admins can view a specific project." },
+        { status: 403 },
+      );
+    }
+
     const result = await fetchMyActivities(user, {
       days: Number.isFinite(days) ? days : undefined,
       from,
       to,
+      projectObjectId:
+        projectParam && /^\d+$/.test(projectParam) ? projectParam : undefined,
     });
     return NextResponse.json(result);
   } catch (err) {

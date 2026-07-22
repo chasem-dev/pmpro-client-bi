@@ -5,7 +5,10 @@ import { writeAudit } from "@/lib/audit";
 import { timesheetEntries } from "@/lib/db";
 import { canEdit } from "@/lib/fields";
 import { loadFieldPoliciesForUser } from "@/lib/policy";
-import { updateResourceAssignment } from "@/lib/p6";
+import {
+  tryMarkActivitiesForUpdateReview,
+  updateResourceAssignment,
+} from "@/lib/p6";
 
 export const dynamic = "force-dynamic";
 
@@ -115,6 +118,10 @@ export async function POST(request: Request) {
         AtCompletionUnits: totalHours,
       });
     }
+
+    await tryMarkActivitiesForUpdateReview(
+      entries.map((e) => e.activityObjectId),
+    );
 
     await writeAudit(
       user,

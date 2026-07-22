@@ -7,10 +7,14 @@ import { canEdit, type FieldKey } from "@/lib/fields";
 import { loadFieldPoliciesForUser } from "@/lib/policy";
 import {
   deleteActivity,
+  getActivitiesByIds,
   P6Error,
+  setActivityOwnerEmail,
+  tryMarkActivitiesForUpdateReview,
   updateActivity,
   type UpdateActivityInput,
 } from "@/lib/p6";
+import { getProjectObjectIdsForOrg } from "@/lib/project-org-links";
 
 export const dynamic = "force-dynamic";
 
@@ -72,6 +76,32 @@ export async function PUT(
       }
     }
 
+    // Owner Email UDF assignment: global admins, or org:admin of the
+    // organization the activity's project is linked to.
+    const hasOwnerEmail = "OwnerEmail" in raw;
+    if (hasOwnerEmail) {
+      if (raw.OwnerEmail !== null && typeof raw.OwnerEmail !== "string") {
+        return NextResponse.json(
+          { error: "OwnerEmail must be a string or null." },
+          { status: 400 },
+        );
+      }
+      let allowed = user.isGlobalAdmin;
+      if (!allowed && user.isProjectAdmin && user.orgId) {
+        const [activity] = await getActivitiesByIds([Number(activityId)]);
+        const orgProjects = await getProjectObjectIdsForOrg(user.orgId);
+        allowed =
+          !!activity?.ProjectObjectId &&
+          orgProjects.includes(String(activity.ProjectObjectId));
+      }
+      if (!allowed) {
+        return NextResponse.json(
+          { error: "You are not allowed to assign this activity's owner." },
+          { status: 403 },
+        );
+      }
+    }
+
     const update: UpdateActivityInput = { ObjectId: Number(activityId) };
     if (typeof raw.Name === "string" && raw.Name.trim()) update.Name = raw.Name.trim();
     const ownerId = optionalNumber(raw.ActivityOwnerUserId);
@@ -93,17 +123,34 @@ export async function PUT(
     if (typeof raw.ExpectedFinishDate === "string" && raw.ExpectedFinishDate)
       update.ExpectedFinishDate = raw.ExpectedFinishDate;
 
-    if (Object.keys(update).length === 1) {
+    const hasFieldUpdates = Object.keys(update).length > 1;
+    if (!hasFieldUpdates && !hasOwnerEmail) {
       return NextResponse.json({ error: "No updatable fields provided." }, { status: 400 });
     }
 
-    const result = await updateActivity(update);
+    let result: unknown = null;
+    if (hasFieldUpdates) {
+      result = await updateActivity(update);
+      // Flag the activity for scheduler review; the update itself already
+      // succeeded, so a failure here must not fail the request.
+      await tryMarkActivitiesForUpdateReview([Number(activityId)]);
+    }
+    if (hasOwnerEmail) {
+      await setActivityOwnerEmail(
+        Number(activityId),
+        (raw.OwnerEmail as string | null) ?? null,
+      );
+    }
+
     await writeAudit(
       user,
       "update",
       "activity",
       activityId,
-      JSON.stringify(update),
+      JSON.stringify({
+        ...update,
+        ...(hasOwnerEmail ? { OwnerEmail: raw.OwnerEmail } : {}),
+      }),
     );
     return NextResponse.json({ result });
   } catch (err) {

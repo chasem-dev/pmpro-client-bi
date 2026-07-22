@@ -5,7 +5,10 @@ import { authErrorResponse } from "@/lib/api-utils";
 import { writeAudit } from "@/lib/audit";
 import { canEdit } from "@/lib/fields";
 import { loadFieldPoliciesForUser } from "@/lib/policy";
-import { updateActivityStep } from "@/lib/p6";
+import {
+  tryMarkActivitiesForUpdateReview,
+  updateActivityStep,
+} from "@/lib/p6";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +31,7 @@ export async function PUT(
       return NextResponse.json({ error: "Invalid step ObjectId." }, { status: 400 });
     }
 
-    let body: { isCompleted?: boolean };
+    let body: { isCompleted?: boolean; activityObjectId?: number };
     try {
       body = await req.json();
     } catch {
@@ -46,6 +49,10 @@ export async function PUT(
       ObjectId: Number(stepId),
       IsCompleted: body.isCompleted,
     });
+
+    if (body.activityObjectId != null) {
+      await tryMarkActivitiesForUpdateReview([Number(body.activityObjectId)]);
+    }
 
     await writeAudit(
       user,

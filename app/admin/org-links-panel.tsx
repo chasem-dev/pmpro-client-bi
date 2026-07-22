@@ -221,14 +221,22 @@ export function OrgLinksPanel({ projects }: { projects: Project[] }) {
                     {l.clerkOrgName}
                   </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => void unlink(l)}
-                  disabled={busy}
-                  className="shrink-0 text-xs text-red-600 hover:text-red-800 disabled:opacity-50"
-                >
-                  Unlink
-                </button>
+                <div className="flex shrink-0 items-center gap-3">
+                  <a
+                    href={`/?project=${l.projectObjectId}`}
+                    className="text-xs font-medium text-secondary hover:underline"
+                  >
+                    View
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => void unlink(l)}
+                    disabled={busy}
+                    className="text-xs text-red-600 hover:text-red-800 disabled:opacity-50"
+                  >
+                    Unlink
+                  </button>
+                </div>
               </li>
             ))}
           </ul>

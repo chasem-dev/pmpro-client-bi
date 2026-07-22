@@ -16,6 +16,13 @@ const OWNER_EMAIL_UDF_TITLE =
 // recreated in P6, update this or fall back to getOwnerEmailUdfTypeObjectId().
 const OWNER_EMAIL_UDF_TYPE_OBJECT_ID = 138;
 
+// Global "Update Review" activity code. Whenever a client updates anything on
+// an activity we assign the "Yes" code value so schedulers know to review it.
+// Verified against the live instance: code type 217 ("Update Review") with
+// value ObjectId 3207 ("Yes" — "Update Review Required").
+const UPDATE_REVIEW_CODE_TYPE_OBJECT_ID = 217;
+const UPDATE_REVIEW_CODE_VALUE_OBJECT_ID = 3207;
+
 const SESSION_TTL_MS = 10 * 60 * 1000;
 
 let sessionCookie: string | null = null;
@@ -36,6 +43,40 @@ function authHeaders(): Record<string, string> {
 
 function escapeP6FilterValue(value: string): string {
   return value.replace(/'/g, "''");
+}
+
+// The P6 REST API serializes every field as a JSON string ("88.0", "false").
+// Coerce numerics/booleans so consumers can rely on the declared types.
+function toNum(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function toBool(value: unknown): boolean | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === "boolean") return value;
+  return String(value).toLowerCase() === "true";
+}
+
+function normalizeActivity(a: P6Activity): P6Activity {
+  return {
+    ...a,
+    ObjectId: toNum(a.ObjectId)!,
+    ProjectObjectId: toNum(a.ProjectObjectId),
+    ActivityOwnerUserId: toNum(a.ActivityOwnerUserId),
+    PercentComplete: toNum(a.PercentComplete),
+    PlannedLaborUnits: toNum(a.PlannedLaborUnits),
+    PlannedLaborCost: toNum(a.PlannedLaborCost),
+    ActualLaborUnits: toNum(a.ActualLaborUnits),
+    ActualLaborCost: toNum(a.ActualLaborCost),
+    PlannedNonLaborUnits: toNum(a.PlannedNonLaborUnits),
+    ActualNonLaborUnits: toNum(a.ActualNonLaborUnits),
+    AtCompletionLaborUnits: toNum(a.AtCompletionLaborUnits),
+    AtCompletionNonLaborUnits: toNum(a.AtCompletionNonLaborUnits),
+    TotalFloat: toNum(a.TotalFloat),
+    FreeFloat: toNum(a.FreeFloat),
+  };
 }
 
 // P6 filter syntax notes (verified against the live API):
@@ -138,6 +179,28 @@ async function p6Write(
     return JSON.parse(text);
   } catch {
     return text;
+  }
+}
+
+/** DELETE with a JSON body (used by resources keyed on composite ids). */
+async function p6Delete(
+  resource: string,
+  entities: Record<string, unknown>[],
+): Promise<void> {
+  const res = await p6Request(
+    `/${resource}?DatabaseName=${encodeURIComponent(getP6Db())}`,
+    {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(entities),
+    },
+  );
+  if (!res.ok) {
+    throw new P6Error(
+      `P6 DELETE ${resource} failed (${res.status})`,
+      res.status,
+      await safeText(res),
+    );
   }
 }
 
@@ -245,6 +308,20 @@ export interface P6ActivityComment {
   CreateDate?: string;
   CreateUser?: string;
   UserObjectId?: number;
+}
+
+export interface P6Relationship {
+  ObjectId: number;
+  PredecessorActivityObjectId: number;
+  SuccessorActivityObjectId: number;
+  PredecessorActivityId?: string;
+  SuccessorActivityId?: string;
+  PredecessorActivityName?: string;
+  SuccessorActivityName?: string;
+  PredecessorProjectObjectId?: number;
+  SuccessorProjectObjectId?: number;
+  Type?: string;
+  Lag?: number;
 }
 
 export interface P6ResourceAssignment {
@@ -379,11 +456,12 @@ export async function deleteActivity(objectId: number): Promise<unknown> {
 export async function getProjectActivities(
   projectObjectId: string,
 ): Promise<P6Activity[]> {
-  return p6Read<P6Activity>(
+  const activities = await p6Read<P6Activity>(
     "activity",
     ACTIVITY_FIELDS,
     `ProjectObjectId:eq:'${projectObjectId}'`,
   );
+  return activities.map(normalizeActivity);
 }
 
 export async function getActivitiesByIds(ids: number[]): Promise<P6Activity[]> {
@@ -399,7 +477,7 @@ export async function getActivitiesByIds(ids: number[]): Promise<P6Activity[]> {
       ACTIVITY_FIELDS,
       inFilter("ObjectId", chunk),
     );
-    results.push(...batch);
+    results.push(...batch.map(normalizeActivity));
   }
   return results;
 }
@@ -511,7 +589,18 @@ export async function getActivitySteps(
       "ObjectId,ActivityObjectId,Name,IsCompleted,PercentComplete,SequenceNumber",
       inFilter("ActivityObjectId", chunk),
     );
-    results.push(...batch);
+    // P6 serializes IsCompleted as the string "false"/"true", which is truthy
+    // either way — coerce to a real boolean so unchecked steps stay unchecked.
+    results.push(
+      ...batch.map((step) => ({
+        ...step,
+        ObjectId: toNum(step.ObjectId)!,
+        ActivityObjectId: toNum(step.ActivityObjectId)!,
+        IsCompleted: toBool(step.IsCompleted),
+        PercentComplete: toNum(step.PercentComplete),
+        SequenceNumber: toNum(step.SequenceNumber),
+      })),
+    );
   }
   return results.sort(
     (a, b) => (a.SequenceNumber ?? 0) - (b.SequenceNumber ?? 0),
@@ -557,9 +646,145 @@ export async function getResourceAssignments(
       "ObjectId,ActivityObjectId,ResourceObjectId,ResourceName,ResourceType,PlannedUnits,ActualUnits,AtCompletionUnits,PlannedCost,ActualCost,RemainingUnits",
       inFilter("ActivityObjectId", chunk),
     );
-    results.push(...batch);
+    // Coerce numerics: P6 returns them as strings, which broke the
+    // Budgeted/Actual columns on the activity cards.
+    results.push(
+      ...batch.map((ra) => ({
+        ...ra,
+        ObjectId: toNum(ra.ObjectId)!,
+        ActivityObjectId: toNum(ra.ActivityObjectId)!,
+        ResourceObjectId: toNum(ra.ResourceObjectId),
+        PlannedUnits: toNum(ra.PlannedUnits),
+        ActualUnits: toNum(ra.ActualUnits),
+        AtCompletionUnits: toNum(ra.AtCompletionUnits),
+        PlannedCost: toNum(ra.PlannedCost),
+        ActualCost: toNum(ra.ActualCost),
+        RemainingUnits: toNum(ra.RemainingUnits),
+      })),
+    );
   }
   return results;
+}
+
+/**
+ * Relationships where any of the given activities is the predecessor or the
+ * successor. Ids in the response are coerced to numbers (P6 returns strings).
+ */
+export async function getRelationships(
+  activityObjectIds: number[],
+): Promise<P6Relationship[]> {
+  if (activityObjectIds.length === 0) return [];
+  const fields =
+    "ObjectId,PredecessorActivityObjectId,SuccessorActivityObjectId,PredecessorActivityId,SuccessorActivityId,PredecessorActivityName,SuccessorActivityName,PredecessorProjectObjectId,SuccessorProjectObjectId,Type,Lag";
+  const results: P6Relationship[] = [];
+  const seen = new Set<number>();
+  for (let i = 0; i < activityObjectIds.length; i += 25) {
+    const chunk = activityObjectIds.slice(i, i + 25);
+    const batch = await p6Read<P6Relationship>(
+      "relationship",
+      fields,
+      `${inFilter("PredecessorActivityObjectId", chunk)} :or: ${inFilter("SuccessorActivityObjectId", chunk)}`,
+    );
+    for (const rel of batch) {
+      const id = Number(rel.ObjectId);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      results.push({
+        ...rel,
+        ObjectId: id,
+        PredecessorActivityObjectId: Number(rel.PredecessorActivityObjectId),
+        SuccessorActivityObjectId: Number(rel.SuccessorActivityObjectId),
+        PredecessorProjectObjectId:
+          rel.PredecessorProjectObjectId != null
+            ? Number(rel.PredecessorProjectObjectId)
+            : undefined,
+        SuccessorProjectObjectId:
+          rel.SuccessorProjectObjectId != null
+            ? Number(rel.SuccessorProjectObjectId)
+            : undefined,
+        Lag: rel.Lag != null ? Number(rel.Lag) : undefined,
+      });
+    }
+  }
+  return results;
+}
+
+/**
+ * Flags an activity for scheduler review by assigning the global
+ * "Update Review" = "Yes" activity code. Idempotent: updates the existing
+ * assignment when one exists, otherwise creates it.
+ */
+export async function markActivityForUpdateReview(
+  activityObjectId: number,
+): Promise<void> {
+  const assignment = {
+    ActivityObjectId: activityObjectId,
+    ActivityCodeTypeObjectId: UPDATE_REVIEW_CODE_TYPE_OBJECT_ID,
+    ActivityCodeObjectId: UPDATE_REVIEW_CODE_VALUE_OBJECT_ID,
+  };
+  try {
+    // PUT succeeds when the activity already has an assignment for this code
+    // type (the common case after the first update).
+    await p6Write("PUT", "activityCodeAssignment", [assignment]);
+  } catch (err) {
+    if (err instanceof P6Error && err.status === 400) {
+      await p6Write("POST", "activityCodeAssignment", [assignment]);
+      return;
+    }
+    throw err;
+  }
+}
+
+/**
+ * Best-effort variant of markActivityForUpdateReview for use after a write
+ * has already succeeded: failures are logged, never thrown.
+ */
+export async function tryMarkActivitiesForUpdateReview(
+  activityObjectIds: number[],
+): Promise<void> {
+  for (const id of new Set(activityObjectIds)) {
+    if (!Number.isInteger(id)) continue;
+    try {
+      await markActivityForUpdateReview(id);
+    } catch (err) {
+      console.error(`Failed to set Update Review code on activity ${id}:`, err);
+    }
+  }
+}
+
+/**
+ * Sets (or clears) the "Owner Email" UDF on an activity. Pass an empty email
+ * to remove the assignment.
+ */
+export async function setActivityOwnerEmail(
+  activityObjectId: number,
+  email: string | null,
+): Promise<void> {
+  const existing = await p6Read<P6UdfValue>(
+    "udfValue",
+    "ForeignObjectId,Text,UDFTypeObjectId",
+    `ForeignObjectId:eq:'${activityObjectId}' :and: UDFTypeObjectId:eq:'${OWNER_EMAIL_UDF_TYPE_OBJECT_ID}'`,
+  );
+  const normalized = email?.trim().toLowerCase() ?? "";
+
+  if (!normalized) {
+    if (existing.length > 0) {
+      await p6Delete("udfValue", [
+        {
+          ForeignObjectId: activityObjectId,
+          UDFTypeObjectId: OWNER_EMAIL_UDF_TYPE_OBJECT_ID,
+        },
+      ]);
+    }
+    return;
+  }
+
+  const value = {
+    ForeignObjectId: activityObjectId,
+    UDFTypeObjectId: OWNER_EMAIL_UDF_TYPE_OBJECT_ID,
+    Text: normalized,
+  };
+  await p6Write(existing.length > 0 ? "PUT" : "POST", "udfValue", [value]);
 }
 
 export async function updateActivityStep(input: {

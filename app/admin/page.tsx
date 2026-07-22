@@ -19,6 +19,17 @@ type Project = { ObjectId: string; Id: string; Name: string };
 type Eps = { ObjectId: string; Id: string; Name: string };
 type Wbs = { ObjectId: string; Name: string; Code?: string };
 type User = { ObjectId: string; Name?: string; EmailAddress?: string };
+type OrgLink = {
+  projectObjectId: string;
+  clerkOrgId: string;
+  clerkOrgName: string;
+};
+type OrgMember = {
+  userId: string;
+  name: string;
+  email: string;
+  role: string;
+};
 type Activity = {
   ObjectId: string;
   Name: string;
@@ -108,6 +119,15 @@ export default function AdminPage() {
               </option>
             ))}
           </select>
+
+          {selectedProject && (
+            <a
+              href={`/?project=${selectedProject.ObjectId}`}
+              className="mt-2 inline-block text-sm font-medium text-secondary hover:underline"
+            >
+              View this project as a client →
+            </a>
+          )}
 
           {selectedProject && (
             <ProjectManager
@@ -250,6 +270,8 @@ function ProjectManager({
 }) {
   const [wbs, setWbs] = useState<Wbs[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [orgLink, setOrgLink] = useState<OrgLink | null>(null);
+  const [members, setMembers] = useState<OrgMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -268,13 +290,31 @@ function ProjectManager({
       apiCall<{ activities: Activity[] }>(
         `/api/projects/${project.ObjectId}/activities`,
       ),
-    ]).then(([wbsRes, actRes]) => {
+      apiCall<{ links: OrgLink[] }>("/api/project-org-links"),
+    ]).then(async ([wbsRes, actRes, linksRes]) => {
       if (cancelled) return;
       if (wbsRes.ok) setWbs(wbsRes.data?.wbs ?? []);
       if (actRes.ok) setActivities(actRes.data?.activities ?? []);
       const firstError = wbsRes.error ?? actRes.error ?? null;
       if (firstError) setError(firstError);
       setLoading(false);
+
+      // Owner assignment offers the members of the organization this project
+      // is linked to.
+      const link =
+        linksRes.data?.links?.find(
+          (l) => l.projectObjectId === String(project.ObjectId),
+        ) ?? null;
+      if (cancelled) return;
+      setOrgLink(link);
+      if (link) {
+        const membersRes = await apiCall<{ members: OrgMember[] }>(
+          `/api/organizations/${link.clerkOrgId}/members`,
+        );
+        if (!cancelled && membersRes.ok) {
+          setMembers(membersRes.data?.members ?? []);
+        }
+      }
     });
     return () => {
       cancelled = true;
@@ -319,6 +359,8 @@ function ProjectManager({
                 key={activity.ObjectId}
                 activity={activity}
                 users={users}
+                members={members}
+                orgName={orgLink?.clerkOrgName}
                 onMutated={loadActivities}
               />
             ))}
@@ -447,17 +489,19 @@ function CreateActivityForm({
 function ActivityRow({
   activity,
   users,
+  members,
+  orgName,
   onMutated,
 }: {
   activity: Activity;
   users: User[];
+  members: OrgMember[];
+  orgName?: string;
   onMutated: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(activity.Name);
-  const [ownerId, setOwnerId] = useState(
-    activity.ActivityOwnerUserId ? String(activity.ActivityOwnerUserId) : "",
-  );
+  const [ownerEmail, setOwnerEmail] = useState(activity.OwnerEmail ?? "");
   const [laborUnits, setLaborUnits] = useState(
     activity.PlannedLaborUnits != null ? String(activity.PlannedLaborUnits) : "",
   );
@@ -476,7 +520,7 @@ function ActivityRow({
       `/api/activities/${activity.ObjectId}`,
       jsonInit("PUT", {
         Name: name.trim(),
-        ActivityOwnerUserId: ownerId || undefined,
+        OwnerEmail: ownerEmail || null,
         PlannedLaborUnits: laborUnits || undefined,
         PlannedLaborCost: laborCost || undefined,
         PlannedStartDate: toP6Date(start),
@@ -554,19 +598,34 @@ function ActivityRow({
                 className={inputClass}
               />
             </Field>
-            <Field label="Assigned user">
+            <Field
+              label={orgName ? `Owner (${orgName} member)` : "Owner email"}
+            >
               <select
-                value={ownerId}
-                onChange={(e) => setOwnerId(e.target.value)}
+                value={ownerEmail}
+                onChange={(e) => setOwnerEmail(e.target.value)}
                 className={inputClass}
               >
                 <option value="">Unassigned</option>
-                {users.map((u) => (
-                  <option key={u.ObjectId} value={u.ObjectId}>
-                    {u.Name ?? u.EmailAddress ?? u.ObjectId}
+                {/* Keep the current owner selectable even if they are no
+                    longer a member of the linked organization. */}
+                {ownerEmail &&
+                  !members.some((m) => m.email === ownerEmail) && (
+                    <option value={ownerEmail}>{ownerEmail}</option>
+                  )}
+                {members.map((m) => (
+                  <option key={m.userId} value={m.email}>
+                    {m.name ? `${m.name} (${m.email})` : m.email}
                   </option>
                 ))}
               </select>
+              {members.length === 0 && (
+                <span className="mt-1 block text-xs font-normal normal-case text-amber-600">
+                  {orgName
+                    ? `No members found in ${orgName}.`
+                    : "Link this project to an organization to assign owners from its members."}
+                </span>
+              )}
             </Field>
             <Field label="Planned labor units">
               <input
