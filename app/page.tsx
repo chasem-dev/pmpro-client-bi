@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppFooter, AppHeader, PageHeader } from "@/components/AppShell";
 import { ActivityCard } from "@/components/my-work/ActivityCard";
+import { ProjectDashboard } from "@/components/project-dashboard/ProjectDashboard";
 import { ProjectsSection } from "@/components/my-work/ProjectsSection";
 import type { MyActivitiesResponse, MyActivity } from "@/components/my-work/types";
 
@@ -165,7 +166,11 @@ export default function Home() {
           </div>
         ) : (
           <div className="space-y-8">
-            {grouped.map(([projectName, projectActivities]) => (
+            {grouped.map(([projectName, projectActivities]) => {
+              const projectObjectId = projectActivities.find(
+                (a) => a.projectObjectId != null,
+              )?.projectObjectId;
+              return (
               <section key={projectName}>
                 <h2 className="mb-3 border-l-4 border-secondary pl-3 text-lg font-semibold text-primary">
                   {projectName}
@@ -173,6 +178,9 @@ export default function Home() {
                     ({projectActivities.length})
                   </span>
                 </h2>
+                {projectObjectId != null && (
+                  <ProjectDashboard projectObjectId={projectObjectId} />
+                )}
                 <div className="space-y-4">
                   {projectActivities.map((activity) => (
                     <ActivityCard
@@ -184,7 +192,8 @@ export default function Home() {
                   ))}
                 </div>
               </section>
-            ))}
+              );
+            })}
           </div>
         )}
       </main>
