@@ -9,6 +9,7 @@ export type MyActivityResource = {
   resourceType?: string;
   plannedUnits?: number;
   actualUnits?: number;
+  remainingUnits?: number;
   atCompletionUnits?: number;
   plannedCost?: number;
   actualCost?: number;
@@ -19,6 +20,8 @@ export type MyActivityRelationship = {
   activityObjectId: number;
   activityId?: string;
   activityName?: string;
+  /** P6 status of the related activity, e.g. "Not Started". */
+  status?: string;
   type?: string;
   lag?: number;
 };
@@ -122,14 +125,24 @@ export const jsonInit = (method: string, body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 });
 
-export function weekDates(anchor = new Date()): string[] {
-  const start = new Date(anchor);
-  start.setDate(start.getDate() - start.getDay());
+/** YYYY-MM-DD in the user's local timezone (toISOString would shift days). */
+function localIsoDate(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+/**
+ * Dates for the daily entry grids: today plus the previous `lookBack` days,
+ * oldest first. Users updating progress rarely enter future days but often
+ * need to correct recent ones.
+ */
+export function trailingDates(anchor = new Date(), lookBack = 7): string[] {
   const dates: string[] = [];
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(start);
-    d.setDate(start.getDate() + i);
-    dates.push(d.toISOString().slice(0, 10));
+  for (let i = lookBack; i >= 0; i--) {
+    const d = new Date(anchor);
+    d.setDate(anchor.getDate() - i);
+    dates.push(localIsoDate(d));
   }
   return dates;
 }

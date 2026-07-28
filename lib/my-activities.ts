@@ -11,6 +11,7 @@ import {
   findActivityIdsByOwnerEmail,
   getActivitiesByIds,
   getActivityComments,
+  getActivityStatuses,
   getActivitySteps,
   getEps,
   getOwnerEmailsForActivities,
@@ -31,6 +32,7 @@ export interface MyActivityResource {
   resourceType?: string;
   plannedUnits?: number;
   actualUnits?: number;
+  remainingUnits?: number;
   atCompletionUnits?: number;
   plannedCost?: number;
   actualCost?: number;
@@ -43,6 +45,8 @@ export interface MyActivityRelationship {
   activityObjectId: number;
   activityId?: string;
   activityName?: string;
+  /** P6 status of the related activity, e.g. "Not Started". */
+  status?: string;
   /** e.g. "Finish to Start". */
   type?: string;
   lag?: number;
@@ -187,6 +191,7 @@ function mapResource(ra: P6ResourceAssignment): MyActivityResource {
     resourceType: ra.ResourceType,
     plannedUnits: ra.PlannedUnits,
     actualUnits: ra.ActualUnits,
+    remainingUnits: ra.RemainingUnits,
     atCompletionUnits: ra.AtCompletionUnits,
     plannedCost: ra.PlannedCost,
     actualCost: ra.ActualCost,
@@ -377,6 +382,25 @@ export async function fetchMyActivities(
     successorsByActivity.set(rel.PredecessorActivityObjectId, succs);
   }
 
+  // Statuses of the activities on the other side of each relationship, so
+  // cards can show whether a hand-off is started/finished. Activities already
+  // in this response provide their status for free; only fetch the rest.
+  const statusByActivity = new Map<number, string>(
+    filtered.flatMap((a) => (a.Status ? [[a.ObjectId, a.Status] as const] : [])),
+  );
+  const missingStatusIds = [
+    ...new Set(
+      relationships.flatMap((rel) => [
+        rel.PredecessorActivityObjectId,
+        rel.SuccessorActivityObjectId,
+      ]),
+    ),
+  ].filter((id) => !statusByActivity.has(id));
+  if (missingStatusIds.length > 0) {
+    const fetched = await getActivityStatuses(missingStatusIds);
+    for (const [id, status] of fetched) statusByActivity.set(id, status);
+  }
+
   const views: MyActivityView[] = filtered.map((a) => {
     const projectId = a.ProjectObjectId ? String(a.ProjectObjectId) : undefined;
     const project = projectId ? projectById.get(projectId) : undefined;
@@ -419,6 +443,7 @@ export async function fetchMyActivities(
           activityObjectId: rel.PredecessorActivityObjectId,
           activityId: rel.PredecessorActivityId,
           activityName: rel.PredecessorActivityName,
+          status: statusByActivity.get(rel.PredecessorActivityObjectId),
           type: rel.Type,
           lag: rel.Lag,
         }),
@@ -428,6 +453,7 @@ export async function fetchMyActivities(
         activityObjectId: rel.SuccessorActivityObjectId,
         activityId: rel.SuccessorActivityId,
         activityName: rel.SuccessorActivityName,
+        status: statusByActivity.get(rel.SuccessorActivityObjectId),
         type: rel.Type,
         lag: rel.Lag,
       })),

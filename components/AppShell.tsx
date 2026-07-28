@@ -12,9 +12,32 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { isAdminUser } from "@/lib/admin";
 
-function NavLink({ href, label }: { href: string; label: string }) {
+function NavLink({
+  href,
+  label,
+  accent = false,
+}: {
+  href: string;
+  label: string;
+  /** Visually sets the link apart from regular tabs (e.g. Admin). */
+  accent?: boolean;
+}) {
   const pathname = usePathname();
   const active = pathname === href;
+  if (accent) {
+    return (
+      <Link
+        href={href}
+        className={`ml-1 rounded-full border px-3 py-1.5 text-sm font-semibold transition-colors ${
+          active
+            ? "border-amber-400 bg-amber-100 text-amber-900"
+            : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
+        }`}
+      >
+        {label}
+      </Link>
+    );
+  }
   return (
     <Link
       href={href}
@@ -47,8 +70,12 @@ export function AppHeader() {
             />
           </Link>
           <nav className="hidden items-center gap-1 sm:flex">
-            <NavLink href="/" label="My Work" />
-            {isAdminUser(user?.id) && <NavLink href="/admin" label="Admin" />}
+            <NavLink href="/" label="Schedule Updates" />
+            <NavLink href="/dashboard" label="Project Dashboard" />
+            <NavLink href="/reports/units" label="Units Report" />
+            {isAdminUser(user?.id) && (
+              <NavLink href="/admin" label="Admin" accent />
+            )}
           </nav>
         </div>
         <div className="flex items-center gap-2">

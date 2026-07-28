@@ -482,6 +482,25 @@ export async function getActivitiesByIds(ids: number[]): Promise<P6Activity[]> {
   return results;
 }
 
+/** Activity Status ("Not Started" | "In Progress" | "Completed") by ObjectId. */
+export async function getActivityStatuses(
+  ids: number[],
+): Promise<Map<number, string>> {
+  const statuses = new Map<number, string>();
+  for (let i = 0; i < ids.length; i += 50) {
+    const chunk = ids.slice(i, i + 50);
+    const batch = await p6Read<Pick<P6Activity, "ObjectId" | "Status">>(
+      "activity",
+      "ObjectId,Status",
+      inFilter("ObjectId", chunk),
+    );
+    for (const a of batch) {
+      if (a.Status) statuses.set(Number(a.ObjectId), a.Status);
+    }
+  }
+  return statuses;
+}
+
 export async function findUserByEmail(email: string): Promise<P6User | null> {
   const list = await p6Read<P6User>(
     "user",
@@ -805,6 +824,7 @@ export async function createActivityComment(input: {
 export interface UpdateResourceAssignmentInput {
   ObjectId: number;
   ActualUnits?: number;
+  RemainingUnits?: number;
   AtCompletionUnits?: number;
   ActualCost?: number;
 }

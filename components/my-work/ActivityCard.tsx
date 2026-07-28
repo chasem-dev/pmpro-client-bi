@@ -16,7 +16,7 @@ import {
   policy,
   toDateInput,
   toP6Date,
-  weekDates,
+  trailingDates,
 } from "./types";
 
 export const activityAnchorId = (objectId: number) => `activity-${objectId}`;
@@ -113,6 +113,23 @@ function OwnerField({
   );
 }
 
+/** Client-facing status label/color for a related activity's P6 status. */
+function relationshipStatus(status?: string): {
+  label: string;
+  className: string;
+} | null {
+  switch (status) {
+    case "Not Started":
+      return { label: "Not Started", className: "bg-gray-100 text-gray-600" };
+    case "In Progress":
+      return { label: "In-Progress", className: "bg-blue-100 text-blue-700" };
+    case "Completed":
+      return { label: "Finished", className: "bg-emerald-100 text-emerald-700" };
+    default:
+      return status ? { label: status, className: "bg-gray-100 text-gray-600" } : null;
+  }
+}
+
 function RelationshipList({
   title,
   relationships,
@@ -129,6 +146,7 @@ function RelationshipList({
       <ul className="mt-1 space-y-1">
         {relationships.map((rel) => {
           const label = rel.activityName ?? rel.activityId ?? rel.activityObjectId;
+          const status = relationshipStatus(rel.status);
           const meta = [rel.type, rel.lag ? `lag ${fmtNum(rel.lag)}` : null]
             .filter(Boolean)
             .join(", ");
@@ -144,6 +162,13 @@ function RelationshipList({
                 </a>
               ) : (
                 <span>{label}</span>
+              )}
+              {status && (
+                <span
+                  className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${status.className}`}
+                >
+                  {status.label}
+                </span>
               )}
               {meta && (
                 <span className="ml-1 text-xs text-muted-foreground/70">
@@ -296,7 +321,7 @@ function TimesheetGrid({
   policies?: FieldPolicies;
   onSaved: () => void;
 }) {
-  const dates = weekDates();
+  const dates = trailingDates();
   const { values, dirty, loading, setValue, clearDirty } = useDailyEntries(
     "/api/timesheet",
     activity.objectId,
@@ -402,7 +427,7 @@ function NonlaborSection({
   policies?: FieldPolicies;
   onSaved: () => void;
 }) {
-  const dates = weekDates();
+  const dates = trailingDates();
   const { values, dirty, loading, setValue, clearDirty } = useDailyEntries(
     "/api/nonlabor",
     activity.objectId,
@@ -602,8 +627,6 @@ function patchFromActivityFields(
   fields: Record<string, unknown>,
 ): Partial<MyActivity> {
   const patch: Partial<MyActivity> = {};
-  if (fields.PercentComplete !== undefined)
-    patch.percentComplete = Number(fields.PercentComplete);
   if (typeof fields.ActualStartDate === "string")
     patch.actualStart = fields.ActualStartDate;
   if (typeof fields.ActualFinishDate === "string")
@@ -638,9 +661,6 @@ export function ActivityCard({
 }) {
   const [open, setOpen] = useState(false);
   const [comment, setComment] = useState("");
-  const [pct, setPct] = useState(
-    activity.percentComplete != null ? String(activity.percentComplete) : "",
-  );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const ref = useRef<HTMLElement>(null);
@@ -720,7 +740,11 @@ export function ActivityCard({
 
   async function updateAssignment(
     id: number,
-    fields: { atCompletionUnits?: number; actualCost?: number },
+    fields: {
+      remainingUnits?: number;
+      atCompletionUnits?: number;
+      actualCost?: number;
+    },
     resourceType: "labor" | "nonlabor" | "material",
   ) {
     setBusy(true);
@@ -830,36 +854,7 @@ export function ActivityCard({
 
       {open && (
         <div className="border-t border-brand-border/60 p-4">
-      <header className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {show("percentComplete") && (
-          <div>
-            <span className="text-xs text-muted-foreground">% Complete</span>
-            {edit("percentComplete") ? (
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={pct}
-                  onChange={(e) => setPct(e.target.value)}
-                  className="w-20 rounded border border-brand-border px-2 py-1 text-sm"
-                />
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() =>
-                    void updateActivity({ PercentComplete: Number(pct) })
-                  }
-                  className="text-xs text-secondary"
-                >
-                  Save
-                </button>
-              </div>
-            ) : (
-              <p className="text-sm">{fmtNum(activity.percentComplete, 0)}%</p>
-            )}
-          </div>
-        )}
+      <header className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {show("plannedStart") && (
           <div>
             <span className="text-xs text-muted-foreground">Planned Start</span>
@@ -870,6 +865,18 @@ export function ActivityCard({
           <div>
             <span className="text-xs text-muted-foreground">Planned Finish</span>
             <p className="text-sm">{fmtDate(activity.plannedFinish)}</p>
+          </div>
+        )}
+        {show("freeFloat") && (
+          <div>
+            <span className="text-xs text-muted-foreground">Free Float</span>
+            <p className="text-sm">{fmtNum(activity.freeFloat)}</p>
+          </div>
+        )}
+        {show("totalFloat") && (
+          <div>
+            <span className="text-xs text-muted-foreground">Total Float</span>
+            <p className="text-sm">{fmtNum(activity.totalFloat)}</p>
           </div>
         )}
         <OwnerField
@@ -979,8 +986,9 @@ export function ActivityCard({
                   <tr className="text-left text-muted-foreground">
                     {show("resourceName") && <th className="py-1">Resource</th>}
                     {show("budgetedLaborUnits") && <th>Budgeted</th>}
-                    {show("atCompleteLaborUnits") && <th>At Complete</th>}
                     {show("actualLaborUnits") && <th>Actual</th>}
+                    {show("remainingLaborUnits") && <th>Remaining</th>}
+                    {show("atCompleteLaborUnits") && <th>At Complete</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -991,6 +999,27 @@ export function ActivityCard({
                       )}
                       {show("budgetedLaborUnits") && (
                         <td>{fmtNum(r.plannedUnits)}</td>
+                      )}
+                      {show("actualLaborUnits") && (
+                        <td>{fmtNum(r.actualUnits)}</td>
+                      )}
+                      {show("remainingLaborUnits") && (
+                        <td>
+                          {edit("remainingLaborUnits") ? (
+                            <UnitsInput
+                              value={r.remainingUnits}
+                              onSave={(n) =>
+                                updateAssignment(
+                                  r.objectId,
+                                  { remainingUnits: n },
+                                  "labor",
+                                )
+                              }
+                            />
+                          ) : (
+                            fmtNum(r.remainingUnits)
+                          )}
+                        </td>
                       )}
                       {show("atCompleteLaborUnits") && (
                         <td>
@@ -1009,9 +1038,6 @@ export function ActivityCard({
                             fmtNum(r.atCompletionUnits)
                           )}
                         </td>
-                      )}
-                      {show("actualLaborUnits") && (
-                        <td>{fmtNum(r.actualUnits)}</td>
                       )}
                     </tr>
                   ))}
@@ -1033,8 +1059,9 @@ export function ActivityCard({
                   <tr className="text-left text-muted-foreground">
                     {show("resourceName") && <th className="py-1">Resource</th>}
                     {show("budgetedNonLaborUnits") && <th>Budgeted</th>}
-                    {show("atCompleteNonLaborUnits") && <th>At Complete</th>}
                     {show("actualNonLaborUnits") && <th>Actual</th>}
+                    {show("remainingNonLaborUnits") && <th>Remaining</th>}
+                    {show("atCompleteNonLaborUnits") && <th>At Complete</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -1045,6 +1072,27 @@ export function ActivityCard({
                       )}
                       {show("budgetedNonLaborUnits") && (
                         <td>{fmtNum(r.plannedUnits)}</td>
+                      )}
+                      {show("actualNonLaborUnits") && (
+                        <td>{fmtNum(r.actualUnits)}</td>
+                      )}
+                      {show("remainingNonLaborUnits") && (
+                        <td>
+                          {edit("remainingNonLaborUnits") ? (
+                            <UnitsInput
+                              value={r.remainingUnits}
+                              onSave={(n) =>
+                                updateAssignment(
+                                  r.objectId,
+                                  { remainingUnits: n },
+                                  "nonlabor",
+                                )
+                              }
+                            />
+                          ) : (
+                            fmtNum(r.remainingUnits)
+                          )}
+                        </td>
                       )}
                       {show("atCompleteNonLaborUnits") && (
                         <td>
@@ -1063,9 +1111,6 @@ export function ActivityCard({
                             fmtNum(r.atCompletionUnits)
                           )}
                         </td>
-                      )}
-                      {show("actualNonLaborUnits") && (
-                        <td>{fmtNum(r.actualUnits)}</td>
                       )}
                     </tr>
                   ))}

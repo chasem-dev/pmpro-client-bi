@@ -29,6 +29,7 @@ export async function PUT(
 
     let body: {
       actualUnits?: number;
+      remainingUnits?: number;
       atCompletionUnits?: number;
       actualCost?: number;
       resourceType?: string;
@@ -44,6 +45,7 @@ export async function PUT(
     const update: {
       ObjectId: number;
       ActualUnits?: number;
+      RemainingUnits?: number;
       AtCompletionUnits?: number;
       ActualCost?: number;
     } = { ObjectId: Number(id) };
@@ -58,6 +60,18 @@ export async function PUT(
         );
       }
       update.ActualUnits = body.actualUnits;
+    }
+
+    if (body.remainingUnits !== undefined) {
+      const key =
+        type === "nonlabor" ? "remainingNonLaborUnits" : "remainingLaborUnits";
+      if (!canEdit(policies, key)) {
+        return NextResponse.json(
+          { error: `Field '${key}' is not editable.` },
+          { status: 403 },
+        );
+      }
+      update.RemainingUnits = body.remainingUnits;
     }
 
     if (body.atCompletionUnits !== undefined) {
@@ -86,6 +100,7 @@ export async function PUT(
 
     if (
       update.ActualUnits === undefined &&
+      update.RemainingUnits === undefined &&
       update.AtCompletionUnits === undefined &&
       update.ActualCost === undefined
     ) {

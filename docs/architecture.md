@@ -32,7 +32,10 @@ Only projects under **Production** (`P6_PROD_EPS_ID`, default `PROD`) are shown.
 - `lib/db/` — MongoDB connection and collection accessors
 - `lib/policy.ts` — Field and company access policies
 - `app/api/my/activities` — Primary read endpoint for the My Work UI
-- `app/page.tsx` — My Work UI grouped by project
+- `app/api/reports/units` + `lib/units-report.ts` — Per-resource report of the user's entered labor hours and non-labor units (from MongoDB, enriched with P6 resource/activity names)
+- `app/page.tsx` — Schedule Updates UI (activity update tool) grouped by project
+- `app/dashboard` — Project Dashboard UI (Metabase-backed BI widgets, one project at a time)
+- `app/reports/units` — Units Report UI (by resource, labor and non-labor)
 
 ## Environment
 

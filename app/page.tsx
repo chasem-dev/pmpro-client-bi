@@ -4,7 +4,6 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AppFooter, AppHeader, PageHeader } from "@/components/AppShell";
 import { ActivityCard } from "@/components/my-work/ActivityCard";
-import { ProjectDashboard } from "@/components/project-dashboard/ProjectDashboard";
 import { ProjectsSection } from "@/components/my-work/ProjectsSection";
 import type {
   AssignableMember,
@@ -113,11 +112,11 @@ function MyWork() {
       <AppHeader />
 
       <PageHeader
-        title={adminProjectId ? "Project View" : "My Work"}
+        title={adminProjectId ? "Project View" : "Schedule Updates"}
         subtitle={
           adminProjectId
             ? "Admin view: every activity in this project, as clients see it."
-            : "Activities assigned to you via the P6 Owner Email field."
+            : "Update activities assigned to you via the P6 Owner Email field."
         }
       >
         <button
@@ -230,9 +229,6 @@ function MyWork() {
         ) : (
           <div className="space-y-8">
             {grouped.map(([projectName, projectActivities]) => {
-              const projectObjectId = projectActivities.find(
-                (a) => a.projectObjectId != null,
-              )?.projectObjectId;
               const late = projectActivities.filter((a) => a.isLate);
               const onTrack = projectActivities.filter((a) => !a.isLate);
               return (
@@ -243,9 +239,6 @@ function MyWork() {
                       ({projectActivities.length})
                     </span>
                   </h2>
-                  {projectObjectId != null && (
-                    <ProjectDashboard projectObjectId={projectObjectId} />
-                  )}
                   {late.length > 0 && (
                     <div className="mb-4 rounded-lg border border-red-200 bg-red-50/50 p-3">
                       <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-red-800">
