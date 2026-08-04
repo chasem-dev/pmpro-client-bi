@@ -12,12 +12,12 @@ export async function loadFieldPoliciesForUser(
   user: AppUser,
 ): Promise<Map<FieldKey, FieldPolicyRule>> {
   const col = await fieldPolicies();
+  // Sessions usually have no active organization, so match rules for every
+  // organization the user belongs to.
   const queries: { scope: PolicyScope; subjectKey: string }[] = [
     { scope: "user", subjectKey: user.userId },
+    ...user.orgIds.map((id) => ({ scope: "org" as const, subjectKey: id })),
   ];
-  if (user.orgId) {
-    queries.push({ scope: "org" as const, subjectKey: user.orgId });
-  }
 
   const docs = await col
     .find({ $or: queries })
@@ -47,10 +47,8 @@ export async function getAllowedCompanyEpsIds(
   const col = await companyAccess();
   const queries: { scope: PolicyScope; subjectKey: string }[] = [
     { scope: "user", subjectKey: user.userId },
+    ...user.orgIds.map((id) => ({ scope: "org" as const, subjectKey: id })),
   ];
-  if (user.orgId) {
-    queries.push({ scope: "org" as const, subjectKey: user.orgId });
-  }
 
   const docs = await col.find({ $or: queries }).toArray();
   if (docs.length === 0) return null;

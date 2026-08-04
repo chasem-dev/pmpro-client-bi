@@ -14,7 +14,7 @@ import {
   updateActivity,
   type UpdateActivityInput,
 } from "@/lib/p6";
-import { getProjectObjectIdsForOrg } from "@/lib/project-org-links";
+import { getLinkForProject } from "@/lib/project-org-links";
 
 export const dynamic = "force-dynamic";
 
@@ -53,7 +53,6 @@ export async function PUT(
 ) {
   try {
     const user = await requireAppUser();
-    const policies = await loadFieldPoliciesForUser(user);
     const { activityId } = await ctx.params;
     if (!activityId || !/^\d+$/.test(activityId)) {
       return NextResponse.json({ error: "Invalid activity ObjectId." }, { status: 400 });
@@ -67,17 +66,31 @@ export async function PUT(
     }
 
     const raw = (body ?? {}) as Record<string, unknown>;
-    for (const [apiField, policyKey] of Object.entries(FIELD_MAP)) {
-      if (raw[apiField] !== undefined && !canEdit(policies, policyKey)) {
-        return NextResponse.json(
-          { error: `Field '${policyKey}' is not editable for this user.` },
-          { status: 403 },
-        );
+
+    // Global admins, and org:admins of the organization this activity's
+    // project is linked to, administer the schedule: they bypass client
+    // field policies and may reassign the activity owner.
+    let isActivityAdmin = user.isGlobalAdmin;
+    if (!isActivityAdmin && user.isProjectAdmin) {
+      const [activity] = await getActivitiesByIds([Number(activityId)]);
+      if (activity?.ProjectObjectId) {
+        const link = await getLinkForProject(String(activity.ProjectObjectId));
+        isActivityAdmin = !!link && user.adminOrgIds.includes(link.clerkOrgId);
       }
     }
 
-    // Owner Email UDF assignment: global admins, or org:admin of the
-    // organization the activity's project is linked to.
+    if (!isActivityAdmin) {
+      const policies = await loadFieldPoliciesForUser(user);
+      for (const [apiField, policyKey] of Object.entries(FIELD_MAP)) {
+        if (raw[apiField] !== undefined && !canEdit(policies, policyKey)) {
+          return NextResponse.json(
+            { error: `Field '${policyKey}' is not editable for this user.` },
+            { status: 403 },
+          );
+        }
+      }
+    }
+
     const hasOwnerEmail = "OwnerEmail" in raw;
     if (hasOwnerEmail) {
       if (raw.OwnerEmail !== null && typeof raw.OwnerEmail !== "string") {
@@ -86,15 +99,7 @@ export async function PUT(
           { status: 400 },
         );
       }
-      let allowed = user.isGlobalAdmin;
-      if (!allowed && user.isProjectAdmin && user.orgId) {
-        const [activity] = await getActivitiesByIds([Number(activityId)]);
-        const orgProjects = await getProjectObjectIdsForOrg(user.orgId);
-        allowed =
-          !!activity?.ProjectObjectId &&
-          orgProjects.includes(String(activity.ProjectObjectId));
-      }
-      if (!allowed) {
+      if (!isActivityAdmin) {
         return NextResponse.json(
           { error: "You are not allowed to assign this activity's owner." },
           { status: 403 },

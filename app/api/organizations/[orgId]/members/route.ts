@@ -18,8 +18,7 @@ export async function GET(
     const user = await requireAppUser();
     const { orgId } = await ctx.params;
 
-    const allowed =
-      user.isGlobalAdmin || (user.isProjectAdmin && user.orgId === orgId);
+    const allowed = user.isGlobalAdmin || user.adminOrgIds.includes(orgId);
     if (!allowed) {
       return NextResponse.json(
         { error: "You are not allowed to list this organization's members." },

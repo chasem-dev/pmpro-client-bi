@@ -157,17 +157,6 @@ function isLateActivity(activity: P6Activity, now = new Date()): boolean {
   return false;
 }
 
-/** Every Clerk organization the user belongs to, preferring the active one. */
-async function getOrgIdsForUser(user: AppUser): Promise<string[]> {
-  if (user.orgId) return [user.orgId];
-  const clerk = await clerkClient();
-  const memberships = await clerk.users.getOrganizationMembershipList({
-    userId: user.userId,
-    limit: 100,
-  });
-  return memberships.data.map((m) => m.organization.id);
-}
-
 async function getOrgMembers(orgId: string): Promise<AssignableMember[]> {
   const clerk = await clerkClient();
   const { data } = await clerk.organizations.getOrganizationMembershipList({
@@ -272,14 +261,18 @@ export async function fetchMyActivities(
   const canAssignOwner = user.isGlobalAdmin || user.isProjectAdmin;
   let assignableMembers: AssignableMember[] = [];
   if (canAssignOwner) {
-    let memberOrgId: string | null = null;
+    let memberOrgIds: string[] = [];
     if (adminProjectView) {
       const link = await getLinkForProject(opts!.projectObjectId!);
-      memberOrgId = link?.clerkOrgId ?? null;
-    } else if (user.isProjectAdmin && user.orgId) {
-      memberOrgId = user.orgId;
+      if (link) memberOrgIds = [link.clerkOrgId];
+    } else {
+      memberOrgIds = user.adminOrgIds;
     }
-    if (memberOrgId) assignableMembers = await getOrgMembers(memberOrgId);
+    if (memberOrgIds.length > 0) {
+      const lists = await Promise.all(memberOrgIds.map(getOrgMembers));
+      const byEmail = new Map(lists.flat().map((m) => [m.email, m]));
+      assignableMembers = [...byEmail.values()];
+    }
   }
 
   // Activity selection:
@@ -293,10 +286,12 @@ export async function fetchMyActivities(
   if (adminProjectView) {
     allowedProjectIds = new Set([opts!.projectObjectId!]);
     activities = await getProjectActivities(opts!.projectObjectId!);
-  } else if (user.isProjectAdmin && user.orgId) {
-    const orgProjectIds = await getProjectObjectIdsForOrg(user.orgId);
-    const adminProjectIds = orgProjectIds.filter((id) =>
-      companyAllowedProjectIds.has(id),
+  } else if (user.isProjectAdmin) {
+    const orgProjectIdLists = await Promise.all(
+      user.adminOrgIds.map((id) => getProjectObjectIdsForOrg(id)),
+    );
+    const adminProjectIds = [...new Set(orgProjectIdLists.flat())].filter(
+      (id) => companyAllowedProjectIds.has(id),
     );
     allowedProjectIds = new Set(adminProjectIds);
     const perProject = await Promise.all(
@@ -306,9 +301,8 @@ export async function fetchMyActivities(
   } else {
     // Owner Email matches only count inside projects linked to the user's
     // organization(s); activities elsewhere in P6 are ignored.
-    const orgIds = await getOrgIdsForUser(user);
     const linkedIdLists = await Promise.all(
-      orgIds.map((id) => getProjectObjectIdsForOrg(id)),
+      user.orgIds.map((id) => getProjectObjectIdsForOrg(id)),
     );
     allowedProjectIds = new Set(
       linkedIdLists.flat().filter((id) => companyAllowedProjectIds.has(id)),
