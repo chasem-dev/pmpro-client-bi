@@ -1,15 +1,19 @@
 "use client";
 
 import {
+  OrganizationSwitcher,
   Show,
   SignInButton,
   SignUpButton,
   UserButton,
+  useOrganization,
+  useOrganizationList,
   useUser,
 } from "@clerk/nextjs";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef } from "react";
 import { isAdminUser } from "@/lib/admin";
 
 function NavLink({
@@ -49,6 +53,55 @@ function NavLink({
     >
       {label}
     </Link>
+  );
+}
+
+/**
+ * Clerk's organization switcher, rendered only for users who belong to more
+ * than one organization. Everyone else has nothing to switch between, and
+ * their session stays on the personal account, where server-side scoping
+ * (lib/auth.ts) already spans every organization they're a member of.
+ */
+function OrgSwitcher() {
+  const { userMemberships } = useOrganizationList({
+    // Only the total count matters here, so keep the payload to one record.
+    userMemberships: { pageSize: 1 },
+  });
+  const { isLoaded, organization } = useOrganization();
+  const activeOrgId = useRef<string | null | undefined>(undefined);
+
+  // Page data is fetched client-side on mount and scoped to the active
+  // organization on the server, so a reload is what actually re-scopes the
+  // view after a switch.
+  useEffect(() => {
+    if (!isLoaded) return;
+    const current = organization?.id ?? null;
+    if (activeOrgId.current === undefined) {
+      activeOrgId.current = current;
+      return;
+    }
+    if (activeOrgId.current !== current) {
+      activeOrgId.current = current;
+      window.location.reload();
+    }
+  }, [isLoaded, organization?.id]);
+
+  if ((userMemberships.count ?? 0) < 2) return null;
+
+  return (
+    <OrganizationSwitcher
+      appearance={{
+        elements: {
+          rootBox: "flex items-center",
+          organizationSwitcherTrigger:
+            "h-9 rounded-md border border-brand-border px-3 text-sm font-medium text-foreground hover:bg-muted",
+          // Org membership is managed in the Clerk dashboard, not by clients.
+          organizationSwitcherPopoverActionButton__manageOrganization: {
+            display: "none",
+          },
+        },
+      }}
+    />
   );
 }
 
@@ -92,6 +145,7 @@ export function AppHeader() {
             </SignUpButton>
           </Show>
           <Show when="signed-in">
+            <OrgSwitcher />
             <UserButton />
           </Show>
         </div>
